@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="DeadKeys">
+  <path d="M12 3H52V7H56V11H61V53H56V57H52V61H12V57H8V53H3V11H8V7H12Z" fill="#2a0f12" stroke="#c4954a" stroke-width="2.5" stroke-linejoin="miter"/>
+  <path d="M15 11H49V14H53V18H56V46H53V50H49V53H15V50H11V46H8V18H11V14H15Z" fill="none" stroke="#7d6033" stroke-width="1"/>
+  <circle cx="32" cy="26" r="8" fill="#c4954a"/>
+  <path d="M28 31H36L40 47H24Z" fill="#c4954a"/>
+  <circle cx="32" cy="26" r="2.6" fill="#2a0f12"/>
+</svg>

@@ -52,6 +52,7 @@ export const common = pair(
       unranked: "Sin clasificar",
     },
     tools: {
+      matchup: { label: "Enfrentamiento", description: "Elige dos héroes y mira quién gana el cara a cara, qué objetos rinden mejor contra el rival y qué builds encajan." },
       map: { label: "Mapa interactivo", description: "El mapa en 2D con campamentos, tiendas, tirolinas, teletransportes y más, con capas que puedes activar." },
       live: { label: "En directo", description: "Las partidas que se están jugando ahora mismo, con sus jugadores y héroes." },
       competitive: { label: "Competitivo", description: "Torneos y escena profesional de Deadlock, con enlaces a Liquipedia." },
@@ -126,6 +127,7 @@ export const common = pair(
       unranked: "Unranked",
     },
     tools: {
+      matchup: { label: "Matchup", description: "Pick two heroes and see who wins the head-to-head, which items perform best against the enemy and which builds fit." },
       map: { label: "Interactive map", description: "The 2D map with camps, shops, ziplines, teleporters and more, with layers you can toggle." },
       live: { label: "Live matches", description: "Matches being played right now, with their players and heroes." },
       competitive: { label: "Competitive", description: "Deadlock tournaments and pro scene, with links to Liquipedia." },

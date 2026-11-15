@@ -22,6 +22,17 @@ export function tierlistMenu(t: Messages) {
   };
 }
 
+/** Builds: desplegable propio con las builds de la comunidad y el enfrentamiento entre dos héroes. */
+export function buildsMenu(t: Messages) {
+  return {
+    label: t.common.nav.builds,
+    items: [
+      { href: "/builds", label: t.common.nav.builds },
+      { href: "/herramientas/enfrentamiento", label: t.common.tools.matchup.label },
+    ],
+  };
+}
+
 /** Herramientas del menú: las usa el desplegable de la cabecera y la página /herramientas. */
 export function tools(t: Messages): Tool[] {
   const x = t.common.tools;

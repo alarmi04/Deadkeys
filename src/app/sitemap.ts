@@ -15,6 +15,7 @@ const STATIC: { path: string; changeFrequency: Freq; priority: number }[] = [
   { path: "/tracker", changeFrequency: "daily", priority: 0.8 },
   { path: "/parches", changeFrequency: "daily", priority: 0.7 },
   { path: "/herramientas", changeFrequency: "monthly", priority: 0.6 },
+  { path: "/herramientas/enfrentamiento", changeFrequency: "daily", priority: 0.7 },
   { path: "/herramientas/mapa", changeFrequency: "monthly", priority: 0.6 },
   { path: "/herramientas/rendimiento/complock", changeFrequency: "monthly", priority: 0.5 },
   { path: "/competitivo", changeFrequency: "weekly", priority: 0.5 },

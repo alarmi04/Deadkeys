@@ -11,8 +11,9 @@ import { items } from "./items";
 import { builds } from "./builds";
 import { heroes } from "./heroes";
 import { home } from "./home";
+import { matchup } from "./matchup";
 
-const parts = { common, home, heroes, builds, items, tierlist, patches, map, pages, matches, players, tracker };
+const parts = { common, home, heroes, builds, items, tierlist, patches, map, pages, matches, players, tracker, matchup };
 
 type Parts = typeof parts;
 export type Messages = { lang: Locale } & { [K in keyof Parts]: Parts[K]["es"] };

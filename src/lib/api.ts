@@ -527,6 +527,8 @@ export type HeroShowcase = {
   name: string;
   vertical: string;
   card: string;
+  /** La tarjeta en pose desafiante (misma medida que `card`), o "" si no existe. */
+  gloat: string;
   background: string;
   nameImage: string;
   /** Busto de 512×512 con fondo transparente, o la tarjeta (280×380) si el héroe no lo tiene. */
@@ -760,6 +762,7 @@ export async function getHeroShowcase(lang: Locale = "es"): Promise<HeroShowcase
       name: h.name,
       vertical: img("top_bar_vertical_image"),
       card: img("icon_hero_card"),
+      gloat: img("hero_card_gloat"),
       background: img("background_image"),
       nameImage: h.images.name_image ?? "",
       portrait: busts[i] ? { src: busts[i], size: "bust" } : { src: img("icon_hero_card"), size: "card" },
@@ -1511,4 +1514,111 @@ export async function getHeroMatchups(heroId: number, limit = 5): Promise<{ stro
     .map((r) => ({ heroId: r.enemy_hero_id, matches: r.matches_played, winRate: r.wins / r.matches_played }))
     .sort((a, b) => b.winRate - a.winRate);
   return { strong: rows.slice(0, limit), weak: rows.slice(-limit).reverse() };
+}
+
+/* ---------- Enfrentamiento: un héroe contra otro ---------- */
+
+/** Medias por partida de un lado del enfrentamiento. */
+export type DuelSide = {
+  kills: number;
+  deaths: number;
+  assists: number;
+  souls: number;
+  objDamage: number;
+  lastHits: number;
+  denies: number;
+};
+export type Duel = { matches: number; winRate: number; a: DuelSide; b: DuelSide };
+
+type RawCounter = {
+  hero_id: number;
+  enemy_hero_id: number;
+  wins: number;
+  matches_played: number;
+  kills: number;
+  enemy_kills: number;
+  deaths: number;
+  enemy_deaths: number;
+  assists: number;
+  enemy_assists: number;
+  networth: number;
+  enemy_networth: number;
+  obj_damage: number;
+  enemy_obj_damage: number;
+  last_hits: number;
+  enemy_last_hits: number;
+  denies: number;
+  enemy_denies: number;
+};
+
+/**
+ * Todos los cruces de héroes en la partida completa (no solo en el mismo carril),
+ * partidas normales de los últimos 30 días. Una sola consulta sirve para cualquier pareja.
+ */
+async function getCounterTable(): Promise<RawCounter[]> {
+  "use cache";
+  cacheLife("hours");
+  return get<RawCounter[]>(
+    `/v1/analytics/hero-counter-stats?game_mode=normal&same_lane_filter=false&min_unix_timestamp=${monthAgo()}`,
+  );
+}
+
+/** Cara a cara de `a` contra `b`, o null si no hay partidas entre ellos. */
+export async function getDuel(a: number, b: number): Promise<Duel | null> {
+  const r = (await getCounterTable()).find((x) => x.hero_id === a && x.enemy_hero_id === b);
+  if (!r || r.matches_played === 0) return null;
+  const n = r.matches_played;
+  return {
+    matches: n,
+    winRate: r.wins / n,
+    a: {
+      kills: r.kills / n,
+      deaths: r.deaths / n,
+      assists: r.assists / n,
+      souls: r.networth / n,
+      objDamage: r.obj_damage / n,
+      lastHits: r.last_hits / n,
+      denies: r.denies / n,
+    },
+    b: {
+      kills: r.enemy_kills / n,
+      deaths: r.enemy_deaths / n,
+      assists: r.enemy_assists / n,
+      souls: r.enemy_networth / n,
+      objDamage: r.enemy_obj_damage / n,
+      lastHits: r.enemy_last_hits / n,
+      denies: r.enemy_denies / n,
+    },
+  };
+}
+
+/** [partidas, victorias, minuto medio de compra en segundos] de un objeto. */
+export type ItemRecord = { matches: number; wins: number; avgBuyTime: number };
+
+function toRecords(raw: RawItemStat[]): Record<number, ItemRecord> {
+  return Object.fromEntries(
+    raw.map((r) => [r.item_id, { matches: r.matches, wins: r.wins, avgBuyTime: r.avg_buy_time_s }]),
+  );
+}
+
+/** Cómo rinde cada objeto con un héroe en general (partidas normales, 30 días). */
+export async function getHeroItemRecords(heroId: number): Promise<Record<number, ItemRecord>> {
+  "use cache";
+  cacheLife("hours");
+  return toRecords(
+    await get<RawItemStat[]>(
+      `/v1/analytics/item-stats?game_mode=normal&hero_id=${heroId}&min_unix_timestamp=${monthAgo()}&min_matches=20`,
+    ),
+  );
+}
+
+/** Cómo rinde cada objeto con el héroe `a` en partidas contra `b` (partidas normales, 30 días). */
+export async function getMatchupItemRecords(a: number, b: number): Promise<Record<number, ItemRecord>> {
+  "use cache";
+  cacheLife("hours");
+  return toRecords(
+    await get<RawItemStat[]>(
+      `/v1/analytics/item-stats?game_mode=normal&hero_id=${a}&enemy_hero_ids=${b}&min_unix_timestamp=${monthAgo()}&min_matches=20`,
+    ),
+  );
 }

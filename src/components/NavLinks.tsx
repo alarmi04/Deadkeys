@@ -6,7 +6,7 @@ import { useEffect, useRef, useState } from "react";
 import { Icon, type IconName } from "@/components/Icons";
 import { useLocale, useT } from "@/i18n/client";
 import type { Messages } from "@/i18n/messages";
-import { tierlistMenu, tools } from "@/lib/tools";
+import { buildsMenu, tierlistMenu, tools } from "@/lib/tools";
 
 type MenuItem = { icon?: IconName; href: string; label: string; children?: { href: string; label: string }[] };
 
@@ -23,10 +23,11 @@ type NavEntry = { href: string; label: string } | { menu: Menu };
 function buildNav(t: Messages): NavEntry[] {
   const n = t.common.nav;
   const tl = tierlistMenu(t);
+  const bm = buildsMenu(t);
   return [
     { href: "/tracker", label: n.tracker },
     { href: "/heroes", label: n.heroes },
-    { href: "/builds", label: n.builds },
+    { menu: { label: bm.label, items: bm.items, align: "left" } },
     { href: "/objetos", label: n.items },
     { menu: { label: tl.label, items: tl.items, align: "left" } },
     { href: "/parches", label: n.patches },

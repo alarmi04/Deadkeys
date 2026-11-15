@@ -8,7 +8,7 @@ export const pages = pair(
     },
     privacy: {
       metaTitle: "Política de privacidad",
-      metaDesc: "Qué datos muestra DeadKeys, cómo retirarlos y por qué no usa cookies ni analítica.",
+      metaDesc: "Qué datos muestra DeadKeys, cómo retirarlos y qué cookies de analítica usa si las aceptas.",
     },
     tools: {
       metaTitle: "Herramientas de Deadlock",
@@ -64,7 +64,7 @@ export const pages = pair(
     },
     privacy: {
       metaTitle: "Privacy policy",
-      metaDesc: "What data DeadKeys shows, how to have it removed and why it uses no cookies or analytics.",
+      metaDesc: "What data DeadKeys shows, how to have it removed and which analytics cookies it uses if you accept them.",
     },
     tools: {
       metaTitle: "Deadlock Tools",

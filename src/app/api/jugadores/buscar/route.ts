@@ -1,9 +1,12 @@
 import { getPlayerRanks, getRanks, rankImage, searchPlayers } from "@/lib/api";
+import { rateLimit, tooManyRequests } from "@/lib/rate-limit";
 
 /** Sugerencias para el combo del buscador: los primeros perfiles que coinciden, con su rango. */
 export async function GET(request: Request) {
   const q = (new URL(request.url).searchParams.get("q") ?? "").trim();
   if (q.length < 2 || q.length > 64) return Response.json([]);
+  // El buscador consulta mientras se escribe: 60 por minuto sobra para una persona y frena el abuso.
+  if (!(await rateLimit("search", 60, 60))) return tooManyRequests(60);
 
   try {
     const players = (await searchPlayers(q)).slice(0, 8);

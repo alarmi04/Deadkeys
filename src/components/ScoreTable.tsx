@@ -4,6 +4,7 @@ import { HeroIcon } from "@/components/HeroIcon";
 import { TeamMark } from "@/components/TeamMark";
 import type { Hero, Item, MatchPlayer } from "@/lib/api";
 import { getT } from "@/i18n/server";
+import { isHiddenId } from "@/lib/blocklist";
 import { getFormat } from "@/i18n/server-format";
 
 export type Best = { souls: number; kills: number; assists: number; damage: number; boss: number; healing: number };
@@ -59,19 +60,24 @@ export async function ScoreTable({
       <ol>
         {sorted.map((p) => {
           const hero = heroes.get(p.heroId);
-          const name = names[p.accountId] ?? t.account(p.accountId);
+          const hidden = isHiddenId(p.accountId);
+          const name = hidden ? m.common.hiddenPlayer : (names[p.accountId] ?? t.account(p.accountId));
           const me = p.accountId === focus;
           return (
             <li key={p.accountId} className="score-row score-player" data-me={me || undefined}>
               <div className="flex min-w-0 items-center gap-3">
                 <HeroIcon hero={hero} size={52} />
                 <div className="min-w-0 leading-tight">
-                  <Link
-                    href={`/jugadores/${p.accountId}`}
-                    className="block truncate font-semibold no-underline hover:text-brass"
-                  >
-                    {name}
-                  </Link>
+                  {hidden ? (
+                    <span className="block truncate font-semibold text-ivory-dim">{name}</span>
+                  ) : (
+                    <Link
+                      href={`/jugadores/${p.accountId}`}
+                      className="block truncate font-semibold no-underline hover:text-brass"
+                    >
+                      {name}
+                    </Link>
+                  )}
                   <span className="block truncate text-sm text-ivory-dim">
                     {hero?.name ?? p.heroId} · {t.lvl} {p.level}
                   </span>

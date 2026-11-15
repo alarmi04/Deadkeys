@@ -1,5 +1,6 @@
 import { cacheLife } from "next/cache";
 import type { Locale } from "@/i18n/config";
+import { getBlockedSet, hiddenId } from "@/lib/blocklist";
 
 const API = "https://api.deadlock-api.com";
 
@@ -208,7 +209,7 @@ export const REGIONS = {
 } as const;
 export type Region = keyof typeof REGIONS;
 
-export async function getLeaderboard(region: Region, limit = 10): Promise<LeaderboardEntry[]> {
+async function getLeaderboardAll(region: Region): Promise<LeaderboardEntry[]> {
   "use cache";
   cacheLife("hours");
   type Raw = {
@@ -221,13 +222,19 @@ export async function getLeaderboard(region: Region, limit = 10): Promise<Leader
     }[];
   };
   const raw = await get<Raw>(`/v1/leaderboard/${region}`);
-  return raw.entries.slice(0, limit).map((e) => ({
+  return raw.entries.map((e) => ({
     rank: e.rank,
     name: e.account_name,
     heroIds: e.top_hero_ids ?? [],
     badge: e.badge_level ?? null,
     accountIds: e.possible_account_ids ?? [],
   }));
+}
+
+/** Clasificación regional sin los jugadores bloqueados (la API da varias cuentas posibles por entrada: si alguna está bloqueada se oculta la entrada). */
+export async function getLeaderboard(region: Region, limit = 10): Promise<LeaderboardEntry[]> {
+  const [all, blocked] = await Promise.all([getLeaderboardAll(region), getBlockedSet()]);
+  return all.filter((e) => !e.accountIds.some((id) => blocked.has(id))).slice(0, limit);
 }
 
 const MODE_LABEL: Record<string, string> = {
@@ -271,7 +278,7 @@ const toActive = (m: RawActive): ActiveMatch => ({
   ) as [ActivePlayer[], ActivePlayer[]],
 });
 
-export async function getActiveMatches(limit = 6): Promise<{ total: number; matches: ActiveMatch[] }> {
+async function fetchActiveMatches(limit: number): Promise<{ total: number; matches: ActiveMatch[] }> {
   "use cache";
   cacheLife("minutes");
   const raw = await get<RawActive[]>("/v1/matches/active");
@@ -284,12 +291,30 @@ export async function getActiveMatches(limit = 6): Promise<{ total: number; matc
 }
 
 /** Una partida en curso por su ID, o null si ya ha terminado. */
-export async function getActiveMatch(matchId: number): Promise<ActiveMatch | null> {
+async function fetchActiveMatch(matchId: number): Promise<ActiveMatch | null> {
   "use cache";
   cacheLife("minutes");
   const raw = await get<RawActive[]>("/v1/matches/active");
   const m = raw.find((x) => x.match_id === matchId);
   return m ? toActive(m) : null;
+}
+
+/** Sustituye a los jugadores bloqueados por «jugador oculto» (ID negativo, sin identidad). */
+const hideBlocked = (m: ActiveMatch, blocked: Set<number>): ActiveMatch => ({
+  ...m,
+  teams: m.teams.map((team, t) =>
+    team.map((p, i) => (blocked.has(p.accountId) ? { accountId: hiddenId(t * 100 + i), heroId: p.heroId } : p)),
+  ) as [ActivePlayer[], ActivePlayer[]],
+});
+
+export async function getActiveMatches(limit = 6): Promise<{ total: number; matches: ActiveMatch[] }> {
+  const [res, blocked] = await Promise.all([fetchActiveMatches(limit), getBlockedSet()]);
+  return { total: res.total, matches: res.matches.map((m) => hideBlocked(m, blocked)) };
+}
+
+export async function getActiveMatch(matchId: number): Promise<ActiveMatch | null> {
+  const [m, blocked] = await Promise.all([fetchActiveMatch(matchId), getBlockedSet()]);
+  return m ? hideBlocked(m, blocked) : null;
 }
 
 export type GameMap = { image: string; frame: string };
@@ -952,7 +977,8 @@ const toProfile = (s: RawSteam): SteamProfile => ({
   matchesLast30d: s.matches_played_last_30d ?? null,
 });
 
-export async function searchPlayers(query: string): Promise<SteamProfile[]> {
+/** Búsqueda sin filtrar: solo para el panel de administración. */
+export async function searchPlayersRaw(query: string): Promise<SteamProfile[]> {
   "use cache";
   cacheLife("minutes");
   const raw = await get<RawSteam[]>(
@@ -961,8 +987,19 @@ export async function searchPlayers(query: string): Promise<SteamProfile[]> {
   return raw.map(toProfile);
 }
 
-/** Rango actual de varias cuentas a la vez (las que no tienen partidas clasificatorias no aparecen). */
+export async function searchPlayers(query: string): Promise<SteamProfile[]> {
+  const [list, blocked] = await Promise.all([searchPlayersRaw(query), getBlockedSet()]);
+  return list.filter((p) => !blocked.has(p.accountId));
+}
+
+/** Rango actual de varias cuentas a la vez (las que no tienen partidas clasificatorias, o están bloqueadas, no aparecen). */
 export async function getPlayerRanks(accountIds: number[]): Promise<Record<number, PlayerRank>> {
+  const blocked = await getBlockedSet();
+  const allowed = accountIds.filter((id) => !blocked.has(id));
+  return allowed.length === 0 ? {} : fetchPlayerRanks(allowed);
+}
+
+async function fetchPlayerRanks(accountIds: number[]): Promise<Record<number, PlayerRank>> {
   "use cache";
   cacheLife("hours");
   const ids = [...new Set(accountIds)].sort((a, b) => a - b);
@@ -976,7 +1013,7 @@ export async function getPlayerRanks(accountIds: number[]): Promise<Record<numbe
 }
 
 /** Nombres de Steam de varias cuentas a la vez (las que no se conocen no aparecen). */
-export async function getPlayerNames(accountIds: number[]): Promise<Record<number, string>> {
+async function fetchPlayerNames(accountIds: number[]): Promise<Record<number, string>> {
   "use cache";
   cacheLife("hours");
   const ids = [...new Set(accountIds)].sort((a, b) => a - b);
@@ -985,10 +1022,15 @@ export async function getPlayerNames(accountIds: number[]): Promise<Record<numbe
   return Object.fromEntries(raw.map((s) => [s.account_id, s.personaname]));
 }
 
+export async function getPlayerNames(accountIds: number[]): Promise<Record<number, string>> {
+  const [names, blocked] = await Promise.all([fetchPlayerNames(accountIds), getBlockedSet()]);
+  return Object.fromEntries(Object.entries(names).filter(([id]) => !blocked.has(Number(id))));
+}
+
 export type PlayerMate = { accountId: number; matches: number; wins: number };
 
 /** Compañeros de equipo con los que más partidas ha jugado (de todos los modos), de más a menos. */
-export async function getPlayerMates(accountId: number, limit = 6): Promise<PlayerMate[]> {
+async function fetchPlayerMates(accountId: number, limit: number): Promise<PlayerMate[]> {
   "use cache";
   cacheLife("minutes");
   const raw = await get<{ mate_id: number; wins: number; matches_played: number }[]>(
@@ -1001,8 +1043,14 @@ export async function getPlayerMates(accountId: number, limit = 6): Promise<Play
     .slice(0, limit);
 }
 
+export async function getPlayerMates(accountId: number, limit = 6): Promise<PlayerMate[]> {
+  const [mates, blocked] = await Promise.all([fetchPlayerMates(accountId, 100), getBlockedSet()]);
+  return mates.filter((m) => !blocked.has(m.accountId)).slice(0, limit);
+}
+
 /** Perfiles de Steam de varias cuentas a la vez (las que no se conocen no aparecen). */
-export async function getSteamProfiles(accountIds: number[]): Promise<Record<number, SteamProfile>> {
+/** Perfiles sin filtrar: solo para el panel de administración. */
+export async function getSteamProfilesRaw(accountIds: number[]): Promise<Record<number, SteamProfile>> {
   "use cache";
   cacheLife("hours");
   const ids = [...new Set(accountIds)].sort((a, b) => a - b);
@@ -1011,18 +1059,33 @@ export async function getSteamProfiles(accountIds: number[]): Promise<Record<num
   return Object.fromEntries(raw.map((s) => [s.account_id, toProfile(s)]));
 }
 
-export async function getSteamProfile(accountId: number): Promise<SteamProfile | null> {
+export async function getSteamProfiles(accountIds: number[]): Promise<Record<number, SteamProfile>> {
+  const [profiles, blocked] = await Promise.all([getSteamProfilesRaw(accountIds), getBlockedSet()]);
+  return Object.fromEntries(Object.entries(profiles).filter(([id]) => !blocked.has(Number(id))));
+}
+
+/** Sin comprobar la lista de bloqueo: usar getSteamProfile. */
+async function getSteamProfileCached(accountId: number): Promise<SteamProfile | null> {
   "use cache";
   cacheLife("hours");
   const raw = await get<RawSteam[]>(`/v1/players/steam?account_ids=${accountId}`);
   return raw[0] ? toProfile(raw[0]) : null;
 }
 
-export async function getPlayerRank(accountId: number): Promise<PlayerRank | null> {
+export async function getSteamProfile(accountId: number): Promise<SteamProfile | null> {
+  return (await getBlockedSet()).has(accountId) ? null : getSteamProfileCached(accountId);
+}
+
+/** Sin comprobar la lista de bloqueo: usar getPlayerRank. */
+async function getPlayerRankCached(accountId: number): Promise<PlayerRank | null> {
   "use cache";
   cacheLife("minutes");
   const raw = await get<{ badge: number; rank: number; subrank: number }>(`/v1/players/${accountId}/rank`);
   return raw.badge > 0 ? { badge: raw.badge, tier: raw.rank, subrank: raw.subrank } : null;
+}
+
+export async function getPlayerRank(accountId: number): Promise<PlayerRank | null> {
+  return (await getBlockedSet()).has(accountId) ? null : getPlayerRankCached(accountId);
 }
 
 export type RankBin = { badge: number; tier: number; subrank: number; players: number };
@@ -1046,7 +1109,7 @@ export type LeaderboardSpot = { region: Region; rank: number; /** Nombre de la e
  * Puesto en las clasificaciones regionales de cada cuenta que aparece como candidata en alguna entrada.
  * Las entradas traen varios IDs posibles, no uno confirmado: quien use esto debe comprobar también el nombre.
  */
-export async function getLeaderboardIndex(): Promise<Record<number, LeaderboardSpot>> {
+async function fetchLeaderboardIndex(): Promise<Record<number, LeaderboardSpot>> {
   "use cache";
   cacheLife("hours");
   type Raw = { entries: { rank: number; account_name?: string; possible_account_ids?: number[] }[] };
@@ -1065,7 +1128,13 @@ export async function getLeaderboardIndex(): Promise<Record<number, LeaderboardS
   return out;
 }
 
-export async function getMatchHistory(accountId: number): Promise<MatchRow[]> {
+export async function getLeaderboardIndex(): Promise<Record<number, LeaderboardSpot>> {
+  const [index, blocked] = await Promise.all([fetchLeaderboardIndex(), getBlockedSet()]);
+  return Object.fromEntries(Object.entries(index).filter(([id]) => !blocked.has(Number(id))));
+}
+
+/** Sin comprobar la lista de bloqueo: usar getMatchHistory. */
+async function getMatchHistoryCached(accountId: number): Promise<MatchRow[]> {
   "use cache";
   cacheLife("minutes");
   type Raw = {
@@ -1100,7 +1169,12 @@ export async function getMatchHistory(accountId: number): Promise<MatchRow[]> {
   }));
 }
 
-export async function getPlayerHeroStats(accountId: number): Promise<PlayerHeroStat[]> {
+export async function getMatchHistory(accountId: number): Promise<MatchRow[]> {
+  return (await getBlockedSet()).has(accountId) ? [] : getMatchHistoryCached(accountId);
+}
+
+/** Sin comprobar la lista de bloqueo: usar getPlayerHeroStats. */
+async function getPlayerHeroStatsCached(accountId: number): Promise<PlayerHeroStat[]> {
   "use cache";
   cacheLife("minutes");
   type Raw = {
@@ -1126,6 +1200,10 @@ export async function getPlayerHeroStats(accountId: number): Promise<PlayerHeroS
       lastPlayed: r.last_played,
     }))
     .sort((a, b) => b.matches - a.matches);
+}
+
+export async function getPlayerHeroStats(accountId: number): Promise<PlayerHeroStat[]> {
+  return (await getBlockedSet()).has(accountId) ? [] : getPlayerHeroStatsCached(accountId);
 }
 
 /** Ejecuta una petición y devuelve null si la API falla, para que una sección caída no tumbe la página. */
@@ -1325,7 +1403,7 @@ export type MatchDetail = {
 const GAME_MODE_LABEL: Record<number, string> = { 1: "Normal", 4: "Street Brawl" };
 
 /** Resultado completo de una partida terminada. La API tarda en tener las más recientes: devuelve error si no está. */
-export async function getMatchDetail(matchId: number): Promise<MatchDetail> {
+async function fetchMatchDetail(matchId: number): Promise<MatchDetail> {
   "use cache";
   cacheLife("hours");
   type Snap = {
@@ -1410,6 +1488,11 @@ export async function getMatchDetail(matchId: number): Promise<MatchDetail> {
     players,
     banned: raw.banned_hero_ids ?? [],
   };
+}
+
+export async function getMatchDetail(matchId: number): Promise<MatchDetail> {
+  const [m, blocked] = await Promise.all([fetchMatchDetail(matchId), getBlockedSet()]);
+  return { ...m, players: m.players.map((p, i) => (blocked.has(p.accountId) ? { ...p, accountId: hiddenId(i) } : p)) };
 }
 
 /* ---------- Enfrentamientos entre héroes ---------- */

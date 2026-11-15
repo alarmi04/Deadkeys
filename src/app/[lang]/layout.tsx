@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from "next";
 import { Josefin_Sans, Poiret_One } from "next/font/google";
 import { notFound } from "next/navigation";
 import { Suspense } from "react";
+import { CookieConsent, CookieSettingsButton } from "@/components/CookieConsent";
 import { JsonLd } from "@/components/JsonLd";
 import { LanguageSwitcher } from "@/components/LanguageSwitcher";
 import Link from "@/components/Link";
@@ -9,7 +10,7 @@ import { NavLinks } from "@/components/NavLinks";
 import { I18nProvider } from "@/i18n/client";
 import { OG_LOCALE, isLocale, locales } from "@/i18n/config";
 import { getMessages } from "@/i18n/server";
-import { CONTACT_EMAIL, SITE_URL, absoluteUrl } from "@/lib/site";
+import { CONTACT_EMAIL, GA_ID, SITE_URL, absoluteUrl } from "@/lib/site";
 import "../globals.css";
 
 const josefin = Josefin_Sans({
@@ -131,12 +132,18 @@ export default async function RootLayout({ children, params }: LayoutProps<"/[la
                   {c.footer.privacy}
                 </Link>{" "}
                 ·{" "}
+                {GA_ID && (
+                  <>
+                    <CookieSettingsButton className="text-brass underline" /> ·{" "}
+                  </>
+                )}
                 <a href={`mailto:${CONTACT_EMAIL}`} className="text-brass underline">
                   {c.footer.contact}
                 </a>
               </p>
             </div>
           </footer>
+          <CookieConsent />
         </I18nProvider>
       </body>
     </html>

@@ -55,8 +55,36 @@ export function PrivacyEn() {
 
       <LegalSection title="Cookies and analytics">
         <p>
-          DeadKeys <strong>does not use cookies, advertising, or analytics or tracking tools</strong>, so it does not
-          show a cookie notice.
+          DeadKeys does not use advertising. With your <strong>consent</strong> (art. 6.1.a GDPR) it uses Google
+          Analytics 4, a service of Google Ireland Limited, to measure which pages are visited. If you reject, or do not
+          answer the notice, no Google script is loaded and no cookie is set.
+        </p>
+        <ul>
+          <li>
+            <strong>_ga</strong>: tells visitors apart. Expires after 2 years.
+          </li>
+          <li>
+            <strong>_ga_*</strong>: keeps session state. Expires after 2 years.
+          </li>
+        </ul>
+        <p>
+          Google Analytics receives your IP address (anonymized), browser, device and the pages you visit. It is set up
+          without advertising signals or ad personalization. Google may transfer data to the United States under the
+          safeguards it provides (EU-US Data Privacy Framework and standard contractual clauses). Analytics data is
+          kept for 2 months at most.
+        </p>
+        <p>
+          You can change your choice at any time with the &ldquo;Cookies&rdquo; link in the footer: rejecting deletes
+          the Google Analytics cookies. Your choice is stored in your browser&apos;s local storage. More information on{" "}
+          <a
+            href="https://policies.google.com/technologies/partner-sites"
+            className={A}
+            target="_blank"
+            rel="noopener noreferrer"
+          >
+            how Google uses data
+          </a>
+          .
         </p>
         <p>
           The only information stored in your browser (local storage) is the tier list you build in the tier list tool,

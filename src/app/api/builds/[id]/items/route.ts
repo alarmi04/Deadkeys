@@ -1,4 +1,5 @@
 import { getBuildItemStats } from "@/lib/api";
+import { rateLimit, tooManyRequests } from "@/lib/rate-limit";
 
 /** Objetos comprados con una build (7 días, rango opcional), para el panel de detalle. */
 export async function GET(req: Request, ctx: RouteContext<"/api/builds/[id]/items">) {
@@ -9,6 +10,7 @@ export async function GET(req: Request, ctx: RouteContext<"/api/builds/[id]/item
   if (!Number.isInteger(buildId) || buildId <= 0 || (tier !== null && !(Number.isInteger(tier) && tier >= 1 && tier <= 11))) {
     return Response.json({ error: "Parámetros no válidos" }, { status: 400 });
   }
+  if (!(await rateLimit("build-items", 60, 60))) return tooManyRequests(60);
   try {
     const stats = await getBuildItemStats(buildId, tier);
     return Response.json(stats, { headers: { "cache-control": "public, max-age=600" } });

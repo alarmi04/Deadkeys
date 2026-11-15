@@ -2,6 +2,7 @@ import { LoadingState } from "@/components/Spinner";
 import type { Metadata } from "next";
 import { isLocale } from "@/i18n/config";
 import { getMessages, getT } from "@/i18n/server";
+import { isHiddenId } from "@/lib/blocklist";
 import { getFormat } from "@/i18n/server-format";
 import { pageMeta } from "@/lib/seo";
 import Image from "next/image";
@@ -137,7 +138,8 @@ async function Team({
   names: Record<number, string>;
   heroes: Map<number, { id: number; name: string; card: string; small: string }>;
 }) {
-  const t = (await getT()).matches.live;
+  const m = await getT();
+  const t = m.matches.live;
   return (
     <div className="min-w-0">
       <h2 className="border-b border-brass-dim/40 pb-1 font-display text-lg tracking-[0.12em] text-brass">
@@ -150,9 +152,13 @@ async function Team({
             <li key={p.accountId} className="flex items-center gap-3 border-b border-brass-dim/20 py-2">
               <HeroIcon hero={hero} size={36} />
               <div className="min-w-0 leading-tight">
-                <Link href={`/jugadores/${p.accountId}`} className="block truncate hover:text-brass">
-                  {names[p.accountId] ?? t.player(p.accountId)}
-                </Link>
+                {isHiddenId(p.accountId) ? (
+                  <span className="block truncate text-ivory-dim">{m.common.hiddenPlayer}</span>
+                ) : (
+                  <Link href={`/jugadores/${p.accountId}`} className="block truncate hover:text-brass">
+                    {names[p.accountId] ?? t.player(p.accountId)}
+                  </Link>
+                )}
                 <span className="block truncate text-xs text-ivory-dim">{hero?.name ?? "—"}</span>
               </div>
             </li>

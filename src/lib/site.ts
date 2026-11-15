@@ -4,10 +4,11 @@
  * para no dejar datos personales en el repositorio:
  *   NEXT_PUBLIC_CONTACT_EMAIL  correo público de contacto (obligatorio antes de publicar)
  *   NEXT_PUBLIC_SITE_URL       URL pública, p. ej. https://deadkeys.app
+ *   NEXT_PUBLIC_GA_ID          ID de Google Analytics 4 (G-XXXXXXXXXX); sin él no hay banner ni analítica
  */
 export const CONTACT_EMAIL = process.env.NEXT_PUBLIC_CONTACT_EMAIL ?? "contacto@example.com";
 export const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL ?? "https://example.com";
-export const LAST_UPDATED = { es: "14 de noviembre de 2026", en: "November 14, 2026" } as const;
+export const LAST_UPDATED = { es: "15 de noviembre de 2026", en: "November 15, 2026" } as const;
 
 /** URL absoluta de una ruta del sitio (sin barra final duplicada). */
 export function absoluteUrl(path = "/"): string {
@@ -38,3 +39,8 @@ export function clip(text: string, max = 158): string {
   const clean = text.replace(/\s+/g, " ").trim();
   return clean.length <= max ? clean : `${clean.slice(0, max - 1).replace(/\s+\S*$/, "")}…`;
 }
+
+/** ID de medición de Google Analytics 4 (G-XXXXXXXXXX). Sin él no hay banner ni analítica. */
+// Se valida el formato porque el ID se inserta en un script en línea.
+const RAW_GA_ID = (process.env.NEXT_PUBLIC_GA_ID ?? "").trim();
+export const GA_ID = /^G-[A-Z0-9]{4,20}$/.test(RAW_GA_ID) ? RAW_GA_ID : "";

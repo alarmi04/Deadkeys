@@ -14,7 +14,7 @@ export async function GET(request: Request) {
   const lang = isLocale(langParam) ? langParam : defaultLocale;
   const back = (path: string) => Response.redirect(new URL(localePath(lang, path), url), 303);
 
-  if (!(region in REGIONS) || !Number.isInteger(rank) || rank < 1) return back("/tracker?vista=clasificacion");
+  if (!Object.hasOwn(REGIONS, region) || !Number.isInteger(rank) || rank < 1) return back("/tracker?vista=clasificacion");
 
   try {
     const entry = (await getLeaderboard(region as Region, 500)).find((e) => e.rank === rank);

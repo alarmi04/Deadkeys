@@ -70,8 +70,37 @@ export default async function PrivacyPage() {
 
       <LegalSection title="Cookies y analítica">
         <p>
-          DeadKeys <strong>no usa cookies, ni publicidad, ni herramientas de analítica o seguimiento</strong>, por lo que
-          no muestra un aviso de cookies.
+          DeadKeys no usa publicidad. Con tu <strong>consentimiento</strong> (art. 6.1.a del RGPD y art. 22.2 de la
+          LSSI) usa Google Analytics 4, un servicio de Google Ireland Limited, para medir qué páginas se visitan. Si
+          rechazas, o no respondes al aviso, no se carga ningún script de Google y no se instala ninguna cookie.
+        </p>
+        <ul>
+          <li>
+            <strong>_ga</strong>: distingue visitantes. Caduca a los 2 años.
+          </li>
+          <li>
+            <strong>_ga_*</strong>: mantiene el estado de la sesión. Caduca a los 2 años.
+          </li>
+        </ul>
+        <p>
+          Google Analytics recibe tu dirección IP (que se anonimiza), tu navegador, tu dispositivo y las páginas que
+          visitas. Está configurado sin señales de publicidad ni personalización de anuncios. Google puede transferir
+          datos a Estados Unidos con las garantías que ofrece (Marco de Privacidad de Datos UE-EE. UU. y cláusulas
+          contractuales tipo). Los datos de analítica se conservan un máximo de 2 meses.
+        </p>
+        <p>
+          Puedes cambiar tu decisión en cualquier momento con el enlace «Cookies» del pie de página: al rechazar se
+          borran las cookies de Google Analytics. Tu elección se guarda en el almacenamiento local de tu navegador.
+          Más información en{" "}
+          <a
+            href="https://policies.google.com/technologies/partner-sites"
+            className={A}
+            target="_blank"
+            rel="noopener noreferrer"
+          >
+            cómo usa Google los datos
+          </a>
+          .
         </p>
         <p>
           La única información que se guarda en tu navegador (almacenamiento local) es la tier list que montas en la

@@ -42,15 +42,20 @@ export default async function LivePage() {
                   href={`/directo/${match.matchId}`}
                   className="flex flex-wrap items-center gap-x-5 gap-y-2 px-2 py-3 hover:bg-wine/40 focus-visible:bg-wine/40"
                 >
-                  <span className="w-24 font-display tracking-[0.06em] text-brass">#{match.matchId}</span>
-                  <span className="flex items-center gap-1">
-                    {match.teams[0].map((p, i) => (
-                      <HeroIcon key={`${p.accountId}-${i}`} hero={byId.get(p.heroId)} size={28} />
-                    ))}
+                  <span className="min-w-24 font-display tracking-[0.06em] text-brass">#{match.matchId}</span>
+                  {/* En pantallas estrechas el segundo equipo baja a su propia línea */}
+                  <span className="flex flex-wrap items-center gap-1">
+                    <span className="flex items-center gap-1">
+                      {match.teams[0].map((p, i) => (
+                        <HeroIcon key={`${p.accountId}-${i}`} hero={byId.get(p.heroId)} size={28} />
+                      ))}
+                    </span>
                     <span className="mx-1 text-xs text-ivory-dim">vs</span>
-                    {match.teams[1].map((p, i) => (
-                      <HeroIcon key={`${p.accountId}-${i}`} hero={byId.get(p.heroId)} size={28} />
-                    ))}
+                    <span className="flex items-center gap-1">
+                      {match.teams[1].map((p, i) => (
+                        <HeroIcon key={`${p.accountId}-${i}`} hero={byId.get(p.heroId)} size={28} />
+                      ))}
+                    </span>
                   </span>
                   <span className="ml-auto flex flex-wrap items-center gap-x-5 text-xs uppercase tracking-[0.1em] text-ivory-dim">
                     <span>{match.ranked ? t.ranked : (match.mode ?? t.otherMode)}</span>

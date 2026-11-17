@@ -3,7 +3,7 @@
 import { createContext, useContext } from "react";
 import type { Locale } from "./config";
 import { makeFormat } from "@/lib/format";
-import { messages, type Messages } from "./messages";
+import { clientMessages, type ClientMessages } from "./messages/client";
 
 const LocaleContext = createContext<Locale>("es");
 
@@ -15,9 +15,9 @@ export function useLocale(): Locale {
   return useContext(LocaleContext);
 }
 
-/** Textos del idioma actual en componentes de cliente. */
-export function useT(): Messages {
-  return messages[useContext(LocaleContext)];
+/** Textos del idioma actual en componentes de cliente (solo las secciones de messages/client.ts). */
+export function useT(): ClientMessages {
+  return clientMessages[useContext(LocaleContext)];
 }
 
 export function useFormat() {

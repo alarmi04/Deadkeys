@@ -12,10 +12,10 @@ import { FilterLink, FilterResults, FilterScope, HeroCombobox, PendingNote } fro
 import { PageHeader } from "@/components/PageHeader";
 import { Unavailable } from "@/components/Unavailable";
 import {
-  type BuildDetail,
+  type BuildStat,
   type Rank,
-  getBuild,
   getBuildStats,
+  getBuilds,
   getHeroStats,
   getHeroes,
   getItems,
@@ -86,14 +86,14 @@ async function BuildsView({ searchParams }: { searchParams: PageProps<"/[lang]/b
   const heroParam = int(sp.heroe);
   const tierParam = int(sp.rango) !== null && int(sp.rango)! >= 1 && int(sp.rango)! <= 11 ? int(sp.rango) : null;
 
-  // Todo lo que no depende de otra respuesta se pide a la vez.
-  const [heroes, ranks, heroStats, items, stats] = await Promise.all([
-    safe(getHeroes()),
-    safe(getRanks()),
-    safe(getHeroStats()),
-    safe(getItems(m.lang)),
-    safe(getBuildStats(heroParam, null)),
-  ]);
+  const f: Filters = { hero: heroParam, tier: tierParam, build: int(sp.build), n: Math.min(MAX, Math.max(PAGE, int(sp.n) ?? PAGE)), sort: sp.orden === "winrate" ? "winrate" : "partidas" };
+
+  // Las builds y su detalle se piden ya, en paralelo con lo que necesitan los filtros: los filtros se
+  // muestran en cuanto llegan héroes y rangos, y la lista entra después en su propio Suspense.
+  const stats = safe(getBuildStats(heroParam, null));
+  const rows = stats.then((s) => (s && s.builds.length > 0 ? loadRows(s, f) : null));
+  const items = safe(getItems(m.lang));
+  const [heroes, ranks, heroStats] = await Promise.all([safe(getHeroes()), safe(getRanks()), safe(getHeroStats())]);
 
   const playable = new Set(heroStats?.stats.map((s) => s.heroId));
   const heroOptions: BrowserHero[] = (heroes ?? [])
@@ -102,7 +102,6 @@ async function BuildsView({ searchParams }: { searchParams: PageProps<"/[lang]/b
     .map((h) => ({ id: h.id, name: h.name, small: h.small }));
   const rankOptions = (ranks ?? []).filter((r) => r.tier > 0).sort((a, b) => a.tier - b.tier);
 
-  const f: Filters = { hero: heroParam, tier: tierParam, build: int(sp.build), n: Math.min(MAX, Math.max(PAGE, int(sp.n) ?? PAGE)), sort: sp.orden === "winrate" ? "winrate" : "partidas" };
   const heroById = Object.fromEntries((heroes ?? []).map((h) => [h.id, { id: h.id, name: h.name, small: h.small }]));
   const rank = rankOptions.find((r) => r.tier === f.tier) ?? null;
 
@@ -140,29 +139,48 @@ async function BuildsView({ searchParams }: { searchParams: PageProps<"/[lang]/b
       </div>
 
       <FilterResults>
-        <Results f={f} stats={stats} heroById={heroById} items={items} rank={rank} allRanks={rankOptions} />
+        <Suspense fallback={<ListSkeleton label={t.loading} />}>
+          <Results f={f} stats={stats} rows={rows} heroById={heroById} items={items} rank={rank} allRanks={rankOptions} />
+        </Suspense>
       </FilterResults>
     </FilterScope>
   );
 }
 
+type Stats = Awaited<ReturnType<typeof getBuildStats>>;
+type Rows = Awaited<ReturnType<typeof loadRows>>;
+
+/** Builds candidatas, su detalle y el nombre y rango de sus autores (no lanza: lo que falla queda fuera). */
+async function loadRows(stats: Stats, f: Filters) {
+  // Sin filtro de rango solo se cargan las builds visibles; con él, las candidatas más jugadas.
+  const ordered = sortBuilds(stats.builds, f.sort);
+  const pool: BuildStat[] = f.tier === null ? ordered.slice(0, Math.min(MAX, f.n + 1)) : stats.builds.slice(0, CANDIDATES);
+  const detailById = await getBuilds(pool.map((b) => b.buildId));
+  const authorIds = [...detailById.values()].map((d) => d.authorId);
+  const [names, ranks] = await Promise.all([safe(getPlayerNames(authorIds)), safe(getPlayerRanks(authorIds))]);
+  return { ordered, pool, detailById, names: names ?? {}, ranks: ranks ?? {} };
+}
+
 async function Results({
   f,
-  stats,
+  stats: statsPromise,
+  rows: rowsPromise,
   heroById,
-  items,
+  items: itemsPromise,
   rank,
   allRanks,
 }: {
   f: Filters;
-  stats: Awaited<ReturnType<typeof getBuildStats>> | null;
+  stats: Promise<Stats | null>;
+  rows: Promise<Rows | null>;
   heroById: Record<number, BrowserHero>;
-  items: Awaited<ReturnType<typeof getItems>> | null;
+  items: Promise<Awaited<ReturnType<typeof getItems>> | null>;
   rank: Rank | null;
   allRanks: Rank[];
 }) {
   const t = (await getT()).builds;
   const { date, num } = await getFormat();
+  const [stats, loaded, items] = await Promise.all([statsPromise, rowsPromise, itemsPromise]);
   if (!stats) {
     return (
       <div className="mt-8">
@@ -170,7 +188,7 @@ async function Results({
       </div>
     );
   }
-  if (stats.builds.length === 0) {
+  if (stats.builds.length === 0 || !loaded) {
     return (
       <p className="mt-8 max-w-[64ch] text-ivory-dim">
         {t.noneThisWeek}
@@ -178,15 +196,7 @@ async function Results({
     );
   }
 
-  // Sin filtro de rango solo se cargan las builds visibles; con él, las candidatas más jugadas.
-  const ordered = sortBuilds(stats.builds, f.sort);
-  const pool = f.tier === null ? ordered.slice(0, Math.min(MAX, f.n + 1)) : stats.builds.slice(0, CANDIDATES);
-  const details = await Promise.all(pool.map((b) => safe(getBuild(b.buildId))));
-  const detailById = new Map(details.filter((d): d is BuildDetail => !!d).map((d) => [d.id, d]));
-  const authorIds = [...detailById.values()].map((d) => d.authorId);
-  const [names, ranks] = await Promise.all([safe(getPlayerNames(authorIds)), safe(getPlayerRanks(authorIds))]).then(
-    ([n, r]) => [n ?? {}, r ?? {}] as const,
-  );
+  const { ordered, pool, detailById, names, ranks } = loaded;
   const badges: Record<number, BrowserBadge> = {};
   for (const [id, r] of Object.entries(ranks)) {
     const info = allRanks.find((x) => x.tier === r.tier);
@@ -280,17 +290,33 @@ async function Skeleton() {
     <div aria-busy="true" aria-label={t.loadingAria}>
       <LoadingState label={t.loading} className="mt-8" />
       <div className="mt-8 h-32 border-y border-brass-dim" />
-      <ul className="mt-10 border border-brass-dim bg-ox-deep">
-        {Array.from({ length: 8 }, (_, i) => (
-          <li key={i} className="flex gap-3 border-b border-brass-dim/40 px-4 py-3">
-            <span className="size-11 bg-wine/60" />
-            <span className="flex flex-1 flex-col gap-2">
-              <span className="h-4 w-1/3 bg-wine/40" />
-              <span className="h-3 w-1/5 bg-wine/30" />
-            </span>
-          </li>
-        ))}
-      </ul>
+      <SkeletonRows />
     </div>
+  );
+}
+
+/** Mientras llega la lista (los filtros ya están en pantalla). */
+function ListSkeleton({ label }: { label: string }) {
+  return (
+    <div aria-busy="true">
+      <LoadingState label={label} className="mt-6" />
+      <SkeletonRows />
+    </div>
+  );
+}
+
+function SkeletonRows() {
+  return (
+    <ul className="mt-10 border border-brass-dim bg-ox-deep" aria-hidden="true">
+      {Array.from({ length: 8 }, (_, i) => (
+        <li key={i} className="flex gap-3 border-b border-brass-dim/40 px-4 py-3">
+          <span className="size-11 bg-wine/60" />
+          <span className="flex flex-1 flex-col gap-2">
+            <span className="h-4 w-1/3 bg-wine/40" />
+            <span className="h-3 w-1/5 bg-wine/30" />
+          </span>
+        </li>
+      ))}
+    </ul>
   );
 }

@@ -28,6 +28,14 @@ import { getFormat } from "@/i18n/server-format";
 import { pageMeta } from "@/lib/seo";
 import { absoluteUrl, breadcrumbLd, clip } from "@/lib/site";
 
+/** Se generan al compilar todos los héroes jugables; el resto se genera en la primera visita y queda en caché. */
+export async function generateStaticParams(): Promise<{ id: string }[]> {
+  const heroes = await safe(getHeroes());
+  const ids = (heroes ?? []).filter((h) => h.playable).map((h) => ({ id: String(h.id) }));
+  // Con Cache Components hace falta al menos uno: si la API no responde al compilar, se generan en la primera visita.
+  return ids.length > 0 ? ids : [{ id: "1" }];
+}
+
 export async function generateMetadata({ params }: PageProps<"/[lang]/heroes/[id]">): Promise<Metadata> {
   const { lang, id } = await params;
   if (!isLocale(lang)) return {};
@@ -58,6 +66,11 @@ export default async function HeroPage({ params, searchParams }: PageProps<"/[la
   );
 }
 
+/**
+ * La ficha solo depende del héroe (`params`): se genera estática y se sirve desde caché.
+ * Los filtros de builds (`searchParams`) solo los lee HeroBuilds, dentro de su propio Suspense,
+ * para que la ficha no espere a las builds ni se vuelva dinámica por ellas.
+ */
 async function HeroView({
   params,
   searchParams,
@@ -214,11 +227,13 @@ async function HeroView({
         <p className="mt-3 max-w-[64ch] text-sm text-ivory-dim">
           {t.buildsIntro(detail.name)}
         </p>
-        <HeroBuilds
-          hero={{ id: heroId, name: detail.name, small: hero?.small ?? "" }}
-          items={items}
-          searchParams={searchParams}
-        />
+        <Suspense fallback={<LoadingState label={m.builds.loading} className="mt-6" />}>
+          <HeroBuilds
+            hero={{ id: heroId, name: detail.name, small: hero?.small ?? "" }}
+            items={items}
+            searchParams={searchParams}
+          />
+        </Suspense>
       </section>
 
       {detail.lore && (

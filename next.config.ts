@@ -51,6 +51,9 @@ const nextConfig: NextConfig = {
   },
   partialPrefetching: true,
   images: {
+    // Los retratos e iconos de la API no mandan Cache-Control: sin esto, cada imagen optimizada se
+    // regenera cada 4 h. Cambian como mucho con los parches, así que se guardan 30 días.
+    minimumCacheTTL: 2_592_000,
     remotePatterns: [
       { protocol: "https", hostname: "assets-bucket.deadlock-api.com" },
       { protocol: "https", hostname: "api.deadlock-api.com", pathname: "/v1/assets/**" },

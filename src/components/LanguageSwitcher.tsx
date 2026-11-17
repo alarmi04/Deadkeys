@@ -6,7 +6,7 @@ import { LANGUAGE_NAME, locales } from "@/i18n/config";
 import { useLocale, useT } from "@/i18n/client";
 
 /** Cambia de idioma conservando la ruta y la consulta actuales. */
-export function LanguageSwitcher() {
+export function LanguageSwitcher({ large = false }: { large?: boolean }) {
   const lang = useLocale();
   const t = useT();
   const pathname = usePathname();
@@ -22,7 +22,7 @@ export function LanguageSwitcher() {
             lang={l}
             title={LANGUAGE_NAME[l]}
             aria-current={l === lang ? "true" : undefined}
-            className={`px-2 py-1 no-underline transition-colors ${l === lang ? "bg-brass text-ox-deep" : "text-ivory-dim hover:text-brass"}`}
+            className={`${large ? "inline-flex min-h-11 min-w-11 items-center justify-center px-3" : "px-2 py-1"} no-underline transition-colors ${l === lang ? "bg-brass text-ox-deep" : "text-ivory-dim hover:text-brass"}`}
           >
             {l}
           </NextLink>

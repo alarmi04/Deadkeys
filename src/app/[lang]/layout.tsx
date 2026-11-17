@@ -6,7 +6,7 @@ import { CookieConsent, CookieSettingsButton } from "@/components/CookieConsent"
 import { JsonLd } from "@/components/JsonLd";
 import { LanguageSwitcher } from "@/components/LanguageSwitcher";
 import Link from "@/components/Link";
-import { NavLinks } from "@/components/NavLinks";
+import { MobileNav, NavLinks } from "@/components/NavLinks";
 import { I18nProvider } from "@/i18n/client";
 import { OG_LOCALE, isLocale, locales } from "@/i18n/config";
 import { getMessages } from "@/i18n/server";
@@ -96,17 +96,27 @@ export default async function RootLayout({ children, params }: LayoutProps<"/[la
             >
               <Link
                 href="/"
-                className="mr-auto flex items-center gap-3 font-display text-[1.65rem] tracking-[0.14em] text-brass no-underline"
+                className="mr-auto flex items-center gap-3 font-display text-[1.35rem] tracking-[0.14em] text-brass no-underline sm:text-[1.65rem]"
               >
                 {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img src="/logo.svg" alt="" width={40} height={40} className="size-10" />
+                <img src="/logo.svg" alt="" width={40} height={40} className="size-8 sm:size-10" />
                 DEADKEYS
               </Link>
               <Suspense fallback={null}>
                 <NavLinks />
               </Suspense>
-              <Suspense fallback={null}>
-                <LanguageSwitcher />
+              <div className="hidden xl:block">
+                <Suspense fallback={null}>
+                  <LanguageSwitcher />
+                </Suspense>
+              </div>
+              {/* Menú hamburguesa (<1280px): móviles y tablets */}
+              <Suspense fallback={<div aria-hidden="true" className="size-11 xl:hidden" />}>
+                <MobileNav>
+                  <Suspense fallback={null}>
+                    <LanguageSwitcher large />
+                  </Suspense>
+                </MobileNav>
               </Suspense>
             </nav>
           </header>

@@ -11,6 +11,7 @@ import { Suspense } from "react";
 import { ComparePicker } from "@/components/ComparePicker";
 import { HeroIcon } from "@/components/HeroIcon";
 import { PageHeader } from "@/components/PageHeader";
+import { PlayerProfile, loadProfile } from "@/components/PlayerProfile";
 import { RankLadder } from "@/components/RankLadder";
 import { RecentPlayers, RememberPlayer } from "@/components/RecentPlayers";
 import {
@@ -131,13 +132,15 @@ async function Tracker({ searchParams }: { searchParams: PageProps<"/[lang]/trac
   const ids = { a: asked.a, b: view === "comparar" ? asked.b : null };
 
   const board = ids.a || ids.b ? await safe(getLeaderboardIndex()) : null;
-  const [pa, pb, ranks, heroes, dist, entries] = await Promise.all([
+  const [pa, pb, ranks, heroes, dist, entries, full] = await Promise.all([
     ids.a ? loadPlayer(ids.a, board, m.players.profile.account) : null,
     ids.b ? loadPlayer(ids.b, board, m.players.profile.account) : null,
     safe(getRanks()),
     safe(getHeroes()),
     ids.a || ids.b || view === "clasificacion" ? safe(getRankDistribution()) : null,
     view === "clasificacion" ? safe(getLeaderboard(region, 500)) : null,
+    // La vista de un jugador muestra su perfil completo, el mismo que /jugadores/[id].
+    view === "jugador" && ids.a ? loadProfile(ids.a) : null,
   ]);
   const players = { a: pa, b: pb };
   // IDs que se pidieron pero no existen o no responden: se avisa en su hueco.
@@ -151,7 +154,8 @@ async function Tracker({ searchParams }: { searchParams: PageProps<"/[lang]/trac
       vista: view === "jugador" ? null : view,
       modo: mode === "todas" ? null : mode,
       region: view === "clasificacion" && region !== "Europe" ? region : null,
-      pagina: view === "clasificacion" && page > 1 ? String(page) : null,
+      // Página de la clasificación, o del historial en la vista de un jugador.
+      pagina: view !== "comparar" && page > 1 ? String(page) : null,
       ...over,
     };
     const p = new URLSearchParams();
@@ -168,7 +172,7 @@ async function Tracker({ searchParams }: { searchParams: PageProps<"/[lang]/trac
   const filtered = (p: Player) =>
     p.history.filter((m) => (mode === "ranked" ? m.ranked : mode === "normal" ? !m.ranked : true));
   const both = pa && pb ? { a: pa, b: pb } : null;
-  const modeHref = (m: Mode) => query({ modo: m === "todas" ? null : m });
+  const modeHref = (m: Mode) => query({ modo: m === "todas" ? null : m, pagina: null });
   const slotProps = (slot: Slot, label?: string) => ({
     slot,
     player: players[slot],
@@ -190,14 +194,14 @@ async function Tracker({ searchParams }: { searchParams: PageProps<"/[lang]/trac
         />
       ))}
 
-      <nav aria-label={t.viewsAria} className="mt-8 grid max-w-2xl grid-cols-3 border border-brass">
+      <nav aria-label={t.viewsAria} className="mt-8 grid max-w-2xl grid-cols-[repeat(3,auto)] border border-brass sm:grid-cols-3">
         {VIEW_IDS.map((vid) => {
           const on = vid === view;
           const href =
             vid === "jugador"
-              ? query({ vista: null, b: null, region: null })
+              ? query({ vista: null, b: null, region: null, pagina: null })
               : vid === "comparar"
-                ? query({ vista: "comparar", region: null, b: asked.b?.toString() })
+                ? query({ vista: "comparar", region: null, pagina: null, b: asked.b?.toString() })
                 : query({ vista: "clasificacion", b: null, pagina: null });
           return (
             <Link
@@ -205,7 +209,7 @@ async function Tracker({ searchParams }: { searchParams: PageProps<"/[lang]/trac
               href={href}
               scroll={false}
               aria-current={on ? "page" : undefined}
-              className={`px-3 py-3 text-center text-sm font-semibold uppercase tracking-[0.16em] no-underline transition-colors sm:px-4 ${
+              className={`px-2 py-3 text-center text-xs font-semibold uppercase tracking-[0.1em] no-underline transition-colors sm:px-4 sm:text-sm sm:tracking-[0.16em] ${
                 on ? "bg-brass text-ox-deep" : "text-ivory hover:bg-wine hover:text-brass"
               }`}
             >
@@ -287,27 +291,38 @@ async function Tracker({ searchParams }: { searchParams: PageProps<"/[lang]/trac
           />
         </>
       ) : (
-        <>
-          <div className="mt-10 max-w-[40rem]">
-            <PlayerSlot {...slotProps("a", t.searchPlayer)} />
-          </div>
-          {pa ? (
-            <>
+        pa && full ? (
+          <PlayerProfile
+            data={full}
+            heading="h2"
+            mode={mode}
+            page={page}
+            modeHref={modeHref}
+            pageHref={(p) => query({ pagina: p > 1 ? String(p) : null })}
+            links={
+              <>
+                {" · "}
+                <Link href={query({ vista: "comparar", region: null, pagina: null })} className="text-brass underline">
+                  {t.solo.compare}
+                </Link>
+                {" · "}
+                <Link href={query({ a: null, pagina: null })} scroll={false} className="text-brass underline">
+                  {t.solo.change}
+                </Link>
+              </>
+            }
+            afterHeader={
               <Standing players={[{ slot: "a", p: pa }]} ranks={ranks ?? []} dist={dist} both={false} />
-              <Solo
-                player={pa}
-                slot="a"
-                matches={filtered(pa)}
-                mode={mode}
-                heroes={heroes ?? []}
-                hrefFor={modeHref}
-                compareHref={query({ vista: "comparar", region: null })}
-              />
-            </>
-          ) : (
+            }
+          />
+        ) : (
+          <>
+            <div className="mt-10 max-w-[40rem]">
+              <PlayerSlot {...slotProps("a", t.searchPlayer)} />
+            </div>
             <p className="mt-10 max-w-[64ch] text-ivory-dim">{t.soloEmpty}</p>
-          )}
-        </>
+          </>
+        )
       )}
     </>
   );
@@ -1194,140 +1209,6 @@ async function Direct({ a, b }: { a: Player; b: Player }) {
           {h.shared.length > 6 && (
             <p className="mt-2 text-xs text-ivory-dim">{dr.lastSix(num(h.shared.length))}</p>
           )}
-        </>
-      )}
-    </>
-  );
-}
-
-/* ---------- Un solo jugador ---------- */
-
-async function Solo({
-  player,
-  slot,
-  matches,
-  mode,
-  heroes,
-  hrefFor,
-  compareHref,
-}: {
-  player: Player;
-  slot: Slot;
-  matches: MatchRow[];
-  mode: Mode;
-  heroes: Hero[];
-  hrefFor: (m: Mode) => string;
-  compareHref: string;
-}) {
-  const m = await getT();
-  const t = m.tracker;
-  const so = t.solo;
-  const f = await getFormat();
-  const { dateTime, duration, num, pct } = f;
-  const METRICS = buildMetrics(t, f);
-  const s = summarize(matches);
-  const byId = new Map(heroes.map((h) => [h.id, h]));
-  const byHero = new Map<number, MatchRow[]>();
-  for (const mt of matches) byHero.set(mt.heroId, [...(byHero.get(mt.heroId) ?? []), mt]);
-  const top = [...byHero.entries()]
-    .map(([heroId, ms]) => ({ heroId, ...summarize(ms) }))
-    .sort((x, y) => y.n - x.n)
-    .slice(0, 5);
-
-  return (
-    <>
-      <h2 className="section-title mt-14">{so.title}</h2>
-      <ModeNav mode={mode} hrefFor={hrefFor} />
-
-      {s.n === 0 ? (
-        <p className="mt-8 text-ivory-dim">
-          {player.history.length === 0 ? m.players.profile.noMatches : m.players.profile.noModeMatches}
-        </p>
-      ) : (
-        <>
-          <p className="mt-6 text-sm text-ivory-dim">
-            {so.introPre(num(s.n))}
-            <Link href={compareHref} className="text-brass underline">
-              {so.compareThem}
-            </Link>
-            .
-          </p>
-          <dl className="panel mt-3 grid grid-cols-2 gap-x-6 gap-y-4 p-5 md:grid-cols-4">
-            {METRICS.filter((mt) => mt.key !== "n").map((mt) => (
-              <div key={mt.key} className="border-t border-brass/25 pt-2">
-                <dt className="text-xs uppercase tracking-[0.12em] text-ivory-dim">{mt.label}</dt>
-                <dd className="text-xl font-semibold">{mt.fmt(mt.pick(s))}</dd>
-              </div>
-            ))}
-          </dl>
-
-          <div className="mt-12 grid gap-x-10 gap-y-12 lg:grid-cols-2">
-            <div>
-              <h2 className="section-title">{so.form}</h2>
-              <div className="panel mt-5 px-4 py-5 sm:px-6">
-                <Form slot={slot} player={player} matches={matches} byId={byId} />
-              </div>
-            </div>
-            <div>
-              <h2 className="section-title">{so.heroes}</h2>
-              <ul className="panel mt-5">
-                {top.map((h) => (
-                  <li
-                    key={h.heroId}
-                    className="flex items-center gap-3 border-b border-brass/15 px-3 py-3 last:border-b-0"
-                  >
-                    <HeroIcon hero={byId.get(h.heroId)} size={44} />
-                    <div className="min-w-0 flex-1">
-                      <p className="truncate font-semibold">{byId.get(h.heroId)?.name ?? h.heroId}</p>
-                      <p className="text-sm text-ivory-dim">
-                        <span className={h.winRate >= 0.5 ? "text-win" : "text-loss"}>{pct(h.winRate, 0)}</span>
-                        {" · "}
-                        {m.players.profile.wl(h.wins, h.losses)}
-                      </p>
-                    </div>
-                    <p className="font-semibold">
-                      {num(h.kda, 2)} <span className="text-xs uppercase tracking-[0.12em] text-ivory-dim">KDA</span>
-                    </p>
-                  </li>
-                ))}
-              </ul>
-            </div>
-          </div>
-
-          <h2 className="section-title mt-14">{so.latest}</h2>
-          <ol className="panel mt-5">
-            {matches.slice(0, 10).map((mt) => {
-              const hero = byId.get(mt.heroId);
-              return (
-                <li key={mt.matchId} className="border-b border-brass/15 last:border-b-0">
-                  <Link
-                    href={`/partidas/${mt.matchId}?jugador=${player.accountId}`}
-                    className="flex items-center gap-3 px-3 py-2.5 no-underline transition-colors hover:bg-wine/50 sm:gap-5 sm:px-6"
-                  >
-                    <HeroIcon hero={hero} size={40} />
-                    <span className="min-w-0 flex-1">
-                      <span className="block truncate font-semibold">{hero?.name ?? mt.heroId}</span>
-                      <span className="block text-sm text-ivory-dim">
-                        {dateTime(mt.start)} · {duration(mt.duration)}
-                        {mt.ranked && " · Ranked"}
-                      </span>
-                    </span>
-                    <span className="hidden font-semibold tabular-nums sm:block">
-                      {mt.kills} / {mt.deaths} / {mt.assists}
-                    </span>
-                    <span className={`w-20 text-right font-semibold ${mt.won ? "text-win" : "text-loss"}`}>
-                      {mt.won ? so.win : so.loss}
-                    </span>
-                  </Link>
-                </li>
-              );
-            })}
-          </ol>
-          <p className="mt-3 text-sm">
-            <Link href={`/jugadores/${player.accountId}`} className="text-brass underline">
-              {so.fullHistory}
-            </Link>
-          </p>
         </>
       )}
     </>

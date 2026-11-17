@@ -34,6 +34,8 @@ export const common = pair(
       tierlistByRank: "Por rango",
       tierlistMine: "Mi tier list",
       main: "Principal",
+      openMenu: "Abrir menú",
+      closeMenu: "Cerrar menú",
     },
     footer: {
       fanProject: "Proyecto de fans, sin relación con Valve. Datos de",
@@ -109,6 +111,8 @@ export const common = pair(
       tierlistByRank: "By rank",
       tierlistMine: "My tier list",
       main: "Main",
+      openMenu: "Open menu",
+      closeMenu: "Close menu",
     },
     footer: {
       fanProject: "Fan project, not affiliated with Valve. Data from",

@@ -3,11 +3,10 @@ import { FilterLink, FilterResults, FilterScope, PendingNote } from "@/component
 import { RankFilter } from "@/components/RankFilter";
 import { Unavailable } from "@/components/Unavailable";
 import {
-  type BuildDetail,
   type Item,
   type Rank,
-  getBuild,
   getBuildStats,
+  getBuilds,
   getPlayerNames,
   getPlayerRanks,
   getRanks,
@@ -120,8 +119,7 @@ async function Results({
 
   // Sin rango solo se cargan las builds visibles; con él, las candidatas más jugadas y se filtra por el rango del autor.
   const pool = f.tier === null ? stats.builds.slice(0, Math.min(MAX, f.n + 1)) : stats.builds.slice(0, CANDIDATES);
-  const poolDetails = await Promise.all(pool.map((b) => safe(getBuild(b.buildId))));
-  const detailById = new Map(poolDetails.filter((d): d is BuildDetail => !!d).map((d) => [d.id, d]));
+  const detailById = await getBuilds(pool.map((b) => b.buildId));
   const authorIds = [...detailById.values()].map((d) => d.authorId);
   const [names, ranks] = await Promise.all([safe(getPlayerNames(authorIds)), safe(getPlayerRanks(authorIds))]).then(
     ([n, r]) => [n ?? {}, r ?? {}] as const,

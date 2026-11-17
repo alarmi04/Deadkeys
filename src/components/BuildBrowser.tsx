@@ -570,7 +570,7 @@ function ItemTile({
       )}
       <div
         role="tooltip"
-        className={`pointer-events-none invisible absolute z-30 w-64 border border-brass bg-ox-deep p-3 text-left opacity-0 shadow-[0_12px_32px_rgb(0_0_0/0.55)] transition-opacity duration-150 group-focus-within:visible group-focus-within:opacity-100 group-hover:visible group-hover:opacity-100 ${
+        className={`pointer-events-none absolute z-30 hidden w-64 max-w-[calc(100vw-2rem)] border border-brass bg-ox-deep p-3 text-left shadow-[0_12px_32px_rgb(0_0_0/0.55)] transition-[opacity,display] transition-discrete duration-150 group-focus-within:block group-hover:block starting:opacity-0 ${
           place.right ? "right-0" : "left-0"
         } ${place.above ? "bottom-full mb-1.5" : "top-full mt-1.5"}`}
       >

@@ -243,9 +243,12 @@ async function Builds({
   const t = m.matchup.builds;
   const { pct, compact, num } = await getFormat();
   const pool = stats.filter((s) => s.matches >= BUILD_MIN_MATCHES).slice(0, BUILDS);
-  const details = await Promise.all(pool.map((s) => safe(getBuild(s.buildId))));
+  const [details, items] = await Promise.all([
+    Promise.all(pool.map((s) => safe(getBuild(s.buildId)))),
+    safe(getItems(m.lang)),
+  ]);
   const byItem = new Map(rows.map((r) => [r.id, r]));
-  const icons = new Map(((await safe(getItems(m.lang))) ?? []).map((i) => [i.id, i]));
+  const icons = new Map((items ?? []).map((i) => [i.id, i]));
 
   const scored = pool
     .map((s, i) => {

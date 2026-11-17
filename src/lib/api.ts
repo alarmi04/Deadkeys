@@ -13,12 +13,17 @@ export class ApiError extends Error {
   }
 }
 
-async function get<T>(path: string): Promise<T> {
-  const res = await fetch(`${API}${path}`, {
-    headers: { accept: "application/json" },
-  });
-  if (!res.ok) throw new ApiError(res.status, path);
-  return res.json() as Promise<T>;
+async function get<T>(path: string, retries = 1): Promise<T> {
+  let res: Response;
+  try {
+    res = await fetch(`${API}${path}`, { headers: { accept: "application/json" } });
+    if (res.ok) return (await res.json()) as T;
+  } catch (e) {
+    // Corte de red o respuesta truncada (JSON incompleto): se reintenta una vez antes de rendirse.
+    if (retries > 0) return get<T>(path, retries - 1);
+    throw e;
+  }
+  throw new ApiError(res.status, path);
 }
 
 /* ---------- Tipos (solo los campos que usamos) ---------- */
@@ -128,7 +133,7 @@ export type PlayerHeroStat = {
 /* ---------- Datos de juego (cambian con cada parche) ---------- */
 
 export async function getHeroes(): Promise<Hero[]> {
-  "use cache";
+  "use cache: remote";
   cacheLife("hours");
   type Raw = {
     id: number;
@@ -149,7 +154,7 @@ export async function getHeroes(): Promise<Hero[]> {
 }
 
 export async function getRanks(): Promise<Rank[]> {
-  "use cache";
+  "use cache: remote";
   cacheLife("days");
   type Raw = { tier: number; name: string; color: string; images: Record<string, string> };
   const raw = await get<Raw[]>("/v1/assets/ranks");
@@ -167,7 +172,7 @@ export function rankImage(ranks: Rank[], tier: number, subrank: number): string 
 export async function getHeroStats(
   tier: number | null = null,
 ): Promise<{ stats: HeroStat[]; totalMatches: number; since: number }> {
-  "use cache";
+  "use cache: remote";
   cacheLife("hours");
   const day = 86_400;
   const since = Math.floor(Date.now() / 1000 / day) * day - 30 * day;
@@ -210,7 +215,7 @@ export const REGIONS = {
 export type Region = keyof typeof REGIONS;
 
 async function getLeaderboardAll(region: Region): Promise<LeaderboardEntry[]> {
-  "use cache";
+  "use cache: remote";
   cacheLife("hours");
   type Raw = {
     entries: {
@@ -320,7 +325,7 @@ export async function getActiveMatch(matchId: number): Promise<ActiveMatch | nul
 export type GameMap = { image: string; frame: string };
 
 export async function getMap(): Promise<GameMap> {
-  "use cache";
+  "use cache: remote";
   cacheLife("days");
   const raw = await get<{ images: Record<string, string> }>("/v1/assets/map");
   return { image: raw.images.minimap, frame: raw.images.frame };
@@ -354,7 +359,7 @@ function patchImage(html: string): string | null {
 }
 
 export async function getPatches(limit = 4): Promise<Patch[]> {
-  "use cache";
+  "use cache: remote";
   cacheLife("hours");
   type Raw = { title: string; pub_date: string; link: string; source: string; content?: string };
   const raw = await get<Raw[]>("/v2/patches");
@@ -378,7 +383,7 @@ export async function getPatches(limit = 4): Promise<Patch[]> {
 }
 
 export async function getMatchesPerDay(): Promise<number | null> {
-  "use cache";
+  "use cache: remote";
   cacheLife("hours");
   const raw = await get<{ fetched_matches_per_day?: number }>("/v1/info");
   return raw.fetched_matches_per_day ?? null;
@@ -428,29 +433,43 @@ export type HeroBuild = {
   categories: BuildCategory[];
 };
 
-export async function getItems(lang: Locale = "es"): Promise<Item[]> {
-  "use cache";
+type RawItem = RawAbility & {
+  id: number;
+  type: Item["type"];
+  image_webp?: string;
+  image?: string;
+  shop_image_webp?: string;
+  shop_image?: string;
+  item_slot_type?: string;
+  item_tier?: number;
+  cost?: number;
+  shopable?: boolean;
+  disabled?: boolean;
+};
+
+/**
+ * Objetos y fichas de habilidad salen del mismo listado (~500 KB por idioma): se descarga una sola vez
+ * por idioma y se guarda ya convertido, en lugar de pedirlo por separado para cada uso.
+ */
+async function getItemData(lang: Locale): Promise<{ items: Item[]; tips: Record<string, AbilityTip> }> {
+  "use cache: remote";
   cacheLife("days");
-  type Raw = {
-    id: number;
-    class_name: string;
-    name: string;
-    type: Item["type"];
-    image_webp?: string;
-    image?: string;
-    shop_image_webp?: string;
-    shop_image?: string;
-    item_slot_type?: string;
-    item_tier?: number;
-    cost?: number;
-    shopable?: boolean;
-    disabled?: boolean;
-    description?: { quip?: string } | string | null;
-  };
   const [raw, es] = await Promise.all([
-    get<Raw[]>("/v1/assets/items"),
-    lang === "es" ? get<Raw[]>("/v1/assets/items?language=spanish").catch(() => [] as Raw[]) : Promise.resolve([] as Raw[]),
+    get<RawItem[]>("/v1/assets/items"),
+    lang === "es" ? get<RawItem[]>("/v1/assets/items?language=spanish").catch(() => null) : Promise.resolve(null),
   ]);
+  // Las fichas van en el idioma pedido; si el listado en español falla, en inglés antes que sin fichas.
+  const local = es ?? raw;
+  NF = NUMBER_FORMATS[es ? lang : "en"];
+  const tips = Object.fromEntries(local.filter((i) => i.type === "ability").map((i) => [i.class_name, toTip(i)]));
+  return { items: toItems(raw, es ?? []), tips };
+}
+
+export async function getItems(lang: Locale = "es"): Promise<Item[]> {
+  return (await getItemData(lang)).items;
+}
+
+function toItems(raw: RawItem[], es: RawItem[]): Item[] {
   const esById = new Map(es.map((i) => [i.id, i]));
   return raw.map((i) => ({
     id: i.id,
@@ -471,7 +490,12 @@ function quipOf(d: { quip?: string } | string | null | undefined): string | null
 }
 
 export async function getHeroDetail(heroId: number, lang: Locale = "es"): Promise<HeroDetail | null> {
-  "use cache";
+  return (await getHeroDetails(lang))[heroId] ?? null;
+}
+
+/** Ficha de todos los héroes a la vez: los dos listados (~200 KB cada uno) se piden una vez, no una por héroe. */
+async function getHeroDetails(lang: Locale): Promise<Record<number, HeroDetail>> {
+  "use cache: remote";
   cacheLife("hours");
   type Pop = { item_id: number; pick_pct: number; winrate_pct: number }[];
   type Raw = {
@@ -493,32 +517,34 @@ export async function getHeroDetail(heroId: number, lang: Locale = "es"): Promis
     get<Raw[]>("/v1/assets/heroes"),
     lang === "es" ? get<Raw[]>("/v1/assets/heroes?language=spanish").catch(() => [] as Raw[]) : Promise.resolve([] as Raw[]),
   ]);
-  const raw = all.find((h) => h.id === heroId);
-  if (!raw) return null;
-  const esRaw = es.find((h) => h.id === heroId);
-  const desc = esRaw?.description ?? raw.description;
+  const esById = new Map(es.map((h) => [h.id, h]));
   const pop = (p?: Pop): PopularItem[] =>
     (p ?? []).map((x) => ({ itemId: x.item_id, pickRate: x.pick_pct / 100, winRate: x.winrate_pct / 100 }));
-  return {
-    id: raw.id,
-    name: raw.name,
-    role: desc?.role ?? "",
-    playstyle: desc?.playstyle ?? "",
-    lore: desc?.lore ?? "",
-    tags: esRaw?.tags ?? raw.tags ?? [],
-    gunTag: esRaw?.gun_tag ?? raw.gun_tag ?? "",
-    type: raw.hero_type ?? "",
-    complexity: raw.complexity ?? 0,
-    color: raw.colors?.style_hex ?? null,
-    background: raw.images.background_image_webp ?? raw.images.background_image ?? "",
-    stats: Object.entries(raw.starting_stats ?? {}).map(([key, v]) => ({ key, value: v.value })),
-    abilityClasses: [1, 2, 3, 4].map((n) => raw.items?.[`signature${n}`]).filter((c): c is string => !!c),
-    popular: {
-      early: pop(raw.popular_items?.early_game),
-      mid: pop(raw.popular_items?.mid_game),
-      late: pop(raw.popular_items?.late_game),
-    },
+  const toDetail = (raw: Raw): HeroDetail => {
+    const esRaw = esById.get(raw.id);
+    const desc = esRaw?.description ?? raw.description;
+    return {
+      id: raw.id,
+      name: raw.name,
+      role: desc?.role ?? "",
+      playstyle: desc?.playstyle ?? "",
+      lore: desc?.lore ?? "",
+      tags: esRaw?.tags ?? raw.tags ?? [],
+      gunTag: esRaw?.gun_tag ?? raw.gun_tag ?? "",
+      type: raw.hero_type ?? "",
+      complexity: raw.complexity ?? 0,
+      color: raw.colors?.style_hex ?? null,
+      background: raw.images.background_image_webp ?? raw.images.background_image ?? "",
+      stats: Object.entries(raw.starting_stats ?? {}).map(([key, v]) => ({ key, value: v.value })),
+      abilityClasses: [1, 2, 3, 4].map((n) => raw.items?.[`signature${n}`]).filter((c): c is string => !!c),
+      popular: {
+        early: pop(raw.popular_items?.early_game),
+        mid: pop(raw.popular_items?.mid_game),
+        late: pop(raw.popular_items?.late_game),
+      },
+    };
   };
+  return Object.fromEntries(all.map((h) => [h.id, toDetail(h)]));
 }
 
 /** Lo que necesita la pantalla de selección de héroes: retratos, fondo, etiquetas e iconos de habilidades. */
@@ -717,17 +743,13 @@ function toTip(a: RawAbility): AbilityTip {
   };
 }
 
-/** Fichas de todas las habilidades en español, por class_name del objeto. */
+/** Fichas de todas las habilidades en el idioma pedido, por class_name del objeto. */
 export async function getAbilityTips(lang: Locale = "es"): Promise<Record<string, AbilityTip>> {
-  "use cache";
-  cacheLife("days");
-  const raw = await get<RawAbility[]>(`/v1/assets/items${langParam(lang)}`);
-  NF = NUMBER_FORMATS[lang];
-  return Object.fromEntries(raw.filter((i) => i.type === "ability").map((i) => [i.class_name, toTip(i)]));
+  return (await getItemData(lang)).tips;
 }
 
 export async function getHeroShowcase(lang: Locale = "es"): Promise<HeroShowcase[]> {
-  "use cache";
+  "use cache: remote";
   cacheLife("hours");
   type Raw = {
     id: number;
@@ -745,16 +767,7 @@ export async function getHeroShowcase(lang: Locale = "es"): Promise<HeroShowcase
   ]);
   const esById = new Map(es.map((h) => [h.id, h]));
   const itemByClass = new Map(items.map((i) => [i.className, i]));
-  // El busto no viene en el listado de héroes: se deduce del nombre de la tarjeta
-  // (inferno_card.png → inferno.webp) y solo se usa si existe; los héroes recientes no lo tienen.
-  const busts = await Promise.all(
-    all.map(async (h) => {
-      const url = h.images.icon_hero_card?.replace(/_card\.png$/, ".webp");
-      if (!url || url === h.images.icon_hero_card) return null;
-      const ok = await fetch(url, { method: "HEAD" }).then((r) => r.ok).catch(() => false);
-      return ok ? url : null;
-    }),
-  );
+  const busts = await getHeroBusts(all.map((h) => h.images.icon_hero_card ?? "")).catch(() => all.map(() => null));
   return all.map((h, i) => {
     const img = (k: string) => h.images[`${k}_webp`] ?? h.images[k] ?? "";
     return {
@@ -776,9 +789,28 @@ export async function getHeroShowcase(lang: Locale = "es"): Promise<HeroShowcase
   });
 }
 
+/**
+ * El busto no viene en el listado de héroes: se deduce del nombre de la tarjeta
+ * (inferno_card.png → inferno.webp) y solo se usa si existe; los héroes recientes no lo tienen.
+ * Comprobarlo cuesta una petición por héroe, así que el resultado se guarda días (cambia solo si cambian las tarjetas).
+ */
+async function getHeroBusts(cards: string[]): Promise<(string | null)[]> {
+  "use cache: remote";
+  cacheLife("days");
+  return Promise.all(
+    cards.map(async (card) => {
+      const url = card.replace(/_card\.png$/, ".webp");
+      if (!url || url === card) return null;
+      // Un fallo de red se propaga (y no se guarda): solo un 404 cuenta como "no hay busto".
+      const ok = (await fetch(url, { method: "HEAD" })).ok;
+      return ok ? url : null;
+    }),
+  );
+}
+
 /** Builds de la comunidad más populares esta semana (última versión de cada una). */
 export async function getHeroBuilds(heroId: number, limit = 3): Promise<HeroBuild[]> {
-  "use cache";
+  "use cache: remote";
   cacheLife("hours");
   type Raw = {
     num_favorites: number | null;
@@ -850,7 +882,7 @@ export async function getBuildStats(
   heroId: number | null,
   tier: number | null,
 ): Promise<{ builds: BuildStat[]; since: number }> {
-  "use cache";
+  "use cache: remote";
   cacheLife("hours");
   type Raw = { hero_id: number; hero_build_id: number; wins: number; matches: number; players: number };
   const since = weekAgo();
@@ -876,7 +908,7 @@ export async function getBuildStats(
 
 /** Última versión publicada de una build. */
 export async function getBuild(buildId: number): Promise<BuildDetail | null> {
-  "use cache";
+  "use cache: remote";
   cacheLife("hours");
   type Raw = {
     hero_build: {
@@ -919,6 +951,27 @@ export async function getBuild(buildId: number): Promise<BuildDetail | null> {
   };
 }
 
+/**
+ * Varias builds a la vez (la API no admite pedirlas por lotes). Las peticiones van en tandas para no
+ * pasar del límite de la API (100 peticiones/s): 250 de golpe acababan en errores y builds sin detalle.
+ * Las que fallan simplemente no aparecen en el resultado.
+ */
+export async function getBuilds(buildIds: number[], concurrency = 32): Promise<Map<number, BuildDetail>> {
+  const ids = [...new Set(buildIds)];
+  const found: (BuildDetail | null)[] = new Array(ids.length).fill(null);
+  let next = 0;
+  async function worker() {
+    while (next < ids.length) {
+      const i = next++;
+      found[i] = await safe(getBuild(ids[i]));
+    }
+  }
+  await Promise.all(Array.from({ length: Math.min(concurrency, ids.length) }, worker));
+  // El orden del resultado sigue al de la entrada, no al de llegada: lo que se derive de él
+  // (p. ej. la lista de autores) se usa como clave de caché y tiene que ser estable.
+  return new Map(found.filter((d): d is BuildDetail => d !== null).map((d) => [d.id, d]));
+}
+
 /** Las secciones por defecto llegan como claves del juego: "#Citadel_HeroBuilds_LateGame" → "Late Game". */
 const SECTION_ES: Record<string, string> = {
   "early game": "Inicio",
@@ -944,7 +997,7 @@ function sectionNameRaw(name: string): string {
 
 /** Objetos comprados por quienes jugaron con una build (mismos 7 días y rango). */
 export async function getBuildItemStats(buildId: number, tier: number | null): Promise<BuildItemStat[]> {
-  "use cache";
+  "use cache: remote";
   cacheLife("hours");
   type Raw = { item_id: number; matches: number; wins: number; avg_buy_time_s: number | null };
   const raw = await get<Raw[]>(
@@ -1003,7 +1056,7 @@ export async function getPlayerRanks(accountIds: number[]): Promise<Record<numbe
 }
 
 async function fetchPlayerRanks(accountIds: number[]): Promise<Record<number, PlayerRank>> {
-  "use cache";
+  "use cache: remote";
   cacheLife("hours");
   const ids = [...new Set(accountIds)].sort((a, b) => a - b);
   if (ids.length === 0) return {};
@@ -1017,7 +1070,7 @@ async function fetchPlayerRanks(accountIds: number[]): Promise<Record<number, Pl
 
 /** Nombres de Steam de varias cuentas a la vez (las que no se conocen no aparecen). */
 async function fetchPlayerNames(accountIds: number[]): Promise<Record<number, string>> {
-  "use cache";
+  "use cache: remote";
   cacheLife("hours");
   const ids = [...new Set(accountIds)].sort((a, b) => a - b);
   if (ids.length === 0) return {};
@@ -1095,7 +1148,7 @@ export type RankBin = { badge: number; tier: number; subrank: number; players: n
 
 /** Cuántos jugadores hay en cada subrango (badge = rango × 10 + subrango), de menor a mayor. */
 export async function getRankDistribution(): Promise<RankBin[]> {
-  "use cache";
+  "use cache: remote";
   cacheLife("hours");
   const raw = await get<{ badge: number; rank: number; subrank: number; players: number }[]>(
     "/v1/players/rank/distribution",
@@ -1113,18 +1166,18 @@ export type LeaderboardSpot = { region: Region; rank: number; /** Nombre de la e
  * Las entradas traen varios IDs posibles, no uno confirmado: quien use esto debe comprobar también el nombre.
  */
 async function fetchLeaderboardIndex(): Promise<Record<number, LeaderboardSpot>> {
-  "use cache";
+  "use cache: remote";
   cacheLife("hours");
-  type Raw = { entries: { rank: number; account_name?: string; possible_account_ids?: number[] }[] };
+  // Reutiliza la caché de cada clasificación regional (la misma que usan la portada y el tracker).
   const regions = Object.keys(REGIONS) as Region[];
-  const results = await Promise.allSettled(regions.map((r) => get<Raw>(`/v1/leaderboard/${r}`)));
+  const results = await Promise.allSettled(regions.map((r) => getLeaderboardAll(r)));
   if (results.every((r) => r.status === "rejected")) throw new Error("Clasificaciones no disponibles");
   const out: Record<number, LeaderboardSpot> = {};
   results.forEach((res, i) => {
     if (res.status !== "fulfilled") return;
-    for (const e of res.value.entries) {
-      for (const id of e.possible_account_ids ?? []) {
-        if (!out[id] || e.rank < out[id].rank) out[id] = { region: regions[i], rank: e.rank, name: e.account_name ?? "" };
+    for (const e of res.value) {
+      for (const id of e.accountIds) {
+        if (!out[id] || e.rank < out[id].rank) out[id] = { region: regions[i], rank: e.rank, name: e.name };
       }
     }
   });
@@ -1232,7 +1285,7 @@ export type ItemInfo = {
 
 /** Qué hace un objeto: descripción en el idioma pedido y sus propiedades numéricas relevantes. */
 export async function getItemInfo(itemId: number, lang: Locale = "es"): Promise<ItemInfo | null> {
-  "use cache";
+  "use cache: remote";
   cacheLife("days");
   type Prop = { value?: string | number; label?: string; postfix?: string; prefix?: string; postvalue_label?: string };
   type Section = {
@@ -1308,7 +1361,7 @@ function monthAgo(): number {
 
 /** Cuándo y cuánto se compra cada objeto (partidas normales, 30 días). */
 export async function getItemBuyStats(): Promise<Record<number, ItemBuyStat>> {
-  "use cache";
+  "use cache: remote";
   cacheLife("hours");
   const raw = await get<RawItemStat[]>(
     `/v1/analytics/item-stats?game_mode=normal&min_unix_timestamp=${monthAgo()}&min_matches=50`,
@@ -1349,14 +1402,14 @@ async function itemBuckets(bucket: "hero" | "enemy_hero", days: number): Promise
 
 /** Quién compra cada objeto y con qué resultado, por héroe propio. */
 export async function getItemsByHero(): Promise<Record<number, ItemHeroRow[]>> {
-  "use cache";
+  "use cache: remote";
   cacheLife("hours");
   return itemBuckets("hero", 30);
 }
 
 /** Cómo rinde cada objeto según el héroe enemigo al que se enfrenta (últimos 7 días: la consulta es pesada). */
 export async function getItemsByEnemy(): Promise<Record<number, ItemHeroRow[]>> {
-  "use cache";
+  "use cache: remote";
   cacheLife("hours");
   return itemBuckets("enemy_hero", 7);
 }
@@ -1407,7 +1460,7 @@ const GAME_MODE_LABEL: Record<number, string> = { 1: "Normal", 4: "Street Brawl"
 
 /** Resultado completo de una partida terminada. La API tarda en tener las más recientes: devuelve error si no está. */
 async function fetchMatchDetail(matchId: number): Promise<MatchDetail> {
-  "use cache";
+  "use cache: remote";
   cacheLife("hours");
   type Snap = {
     time_stamp_s: number;
@@ -1504,16 +1557,24 @@ export type Matchup = { heroId: number; matches: number; winRate: number };
 
 /** Con qué héroes enemigos gana más y con cuáles pierde más un héroe (partidas normales, 30 días). */
 export async function getHeroMatchups(heroId: number, limit = 5): Promise<{ strong: Matchup[]; weak: Matchup[] }> {
-  "use cache";
+  const rows = (await getMatchupTable())[heroId] ?? [];
+  return { strong: rows.slice(0, limit), weak: rows.slice(-limit).reverse() };
+}
+
+/** Cruces de cada héroe, de mejor a peor: la tabla (~200 KB) se pide una vez para todos los héroes. */
+async function getMatchupTable(): Promise<Record<number, Matchup[]>> {
+  "use cache: remote";
   cacheLife("hours");
   type Raw = { hero_id: number; enemy_hero_id: number; wins: number; matches_played: number };
   const raw = await get<Raw[]>(`/v1/analytics/hero-counter-stats?game_mode=normal&min_unix_timestamp=${monthAgo()}`);
+  const out: Record<number, Matchup[]> = {};
   // Con pocas partidas el porcentaje no significa nada: se descartan los cruces poco jugados.
-  const rows = raw
-    .filter((r) => r.hero_id === heroId && r.matches_played >= 1000)
-    .map((r) => ({ heroId: r.enemy_hero_id, matches: r.matches_played, winRate: r.wins / r.matches_played }))
-    .sort((a, b) => b.winRate - a.winRate);
-  return { strong: rows.slice(0, limit), weak: rows.slice(-limit).reverse() };
+  for (const r of raw) {
+    if (r.matches_played < 1000) continue;
+    (out[r.hero_id] ??= []).push({ heroId: r.enemy_hero_id, matches: r.matches_played, winRate: r.wins / r.matches_played });
+  }
+  for (const rows of Object.values(out)) rows.sort((a, b) => b.winRate - a.winRate);
+  return out;
 }
 
 /* ---------- Enfrentamiento: un héroe contra otro ---------- */
@@ -1556,7 +1617,7 @@ type RawCounter = {
  * partidas normales de los últimos 30 días. Una sola consulta sirve para cualquier pareja.
  */
 async function getCounterTable(): Promise<RawCounter[]> {
-  "use cache";
+  "use cache: remote";
   cacheLife("hours");
   return get<RawCounter[]>(
     `/v1/analytics/hero-counter-stats?game_mode=normal&same_lane_filter=false&min_unix_timestamp=${monthAgo()}`,
@@ -1603,7 +1664,7 @@ function toRecords(raw: RawItemStat[]): Record<number, ItemRecord> {
 
 /** Cómo rinde cada objeto con un héroe en general (partidas normales, 30 días). */
 export async function getHeroItemRecords(heroId: number): Promise<Record<number, ItemRecord>> {
-  "use cache";
+  "use cache: remote";
   cacheLife("hours");
   return toRecords(
     await get<RawItemStat[]>(
@@ -1614,7 +1675,7 @@ export async function getHeroItemRecords(heroId: number): Promise<Record<number,
 
 /** Cómo rinde cada objeto con el héroe `a` en partidas contra `b` (partidas normales, 30 días). */
 export async function getMatchupItemRecords(a: number, b: number): Promise<Record<number, ItemRecord>> {
-  "use cache";
+  "use cache: remote";
   cacheLife("hours");
   return toRecords(
     await get<RawItemStat[]>(

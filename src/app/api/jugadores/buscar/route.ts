@@ -29,7 +29,8 @@ export async function GET(request: Request) {
         };
       }),
     );
-  } catch {
+  } catch (e) {
+    console.error("Búsqueda de jugadores fallida:", e);
     return Response.json({ error: "unavailable" }, { status: 502 });
   }
 }

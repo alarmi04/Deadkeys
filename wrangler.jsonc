@@ -17,10 +17,11 @@
       "service": "deadkeys"
     }
   ],
-  // Sin "id": wrangler deploy crea el namespace de KV automáticamente la primera vez.
+  // Namespace "deadkeys-next-inc-cache-kv" (creado automáticamente en el primer deploy).
   "kv_namespaces": [
     {
-      "binding": "NEXT_INC_CACHE_KV"
+      "binding": "NEXT_INC_CACHE_KV",
+      "id": "060a532456564ae588433db23b7fb764"
     }
   ],
   "observability": {

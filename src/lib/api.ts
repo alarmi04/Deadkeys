@@ -3,6 +3,7 @@ import type { Locale } from "@/i18n/config";
 import { getBlockedSet, hiddenId } from "@/lib/blocklist";
 
 const API = "https://api.deadlock-api.com";
+const USER_AGENT = "DeadKeys/1.0 (+https://deadkeys.app)";
 
 export class ApiError extends Error {
   constructor(
@@ -17,7 +18,8 @@ export class ApiError extends Error {
 async function get<T>(path: string, retries = 1): Promise<T> {
   let res: Response;
   try {
-    res = await fetch(`${API}${path}`, { headers: { accept: "application/json" } });
+    // Sin User-Agent, el firewall de la API (Cloudflare) rechaza algunas rutas cuando se llaman desde un Worker.
+    res = await fetch(`${API}${path}`, { headers: { accept: "application/json", "user-agent": USER_AGENT } });
     if (res.ok) return (await res.json()) as T;
   } catch (e) {
     // Corte de red o respuesta truncada (JSON incompleto): se reintenta una vez antes de rendirse.
@@ -25,7 +27,10 @@ async function get<T>(path: string, retries = 1): Promise<T> {
     throw e;
   }
   // El principio del cuerpo ayuda a diagnosticar rechazos (p. ej. páginas de error del firewall de la API).
-  const detail = (await res.text().catch(() => "")).replace(/\s+/g, " ").slice(0, 200);
+  const body = (await res.text().catch(() => "")).replace(/\s+/g, " ");
+  // Las páginas de bloqueo de Cloudflare llevan un código (p. ej. "Error 1010"): se prefiere ese dato.
+  const cfError = /error code:? ?\d{4}|Error \d{4}[^<]{0,80}/i.exec(body)?.[0];
+  const detail = cfError ?? body.slice(0, 200);
   throw new ApiError(res.status, path, detail);
 }
 

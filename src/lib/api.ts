@@ -8,8 +8,9 @@ export class ApiError extends Error {
   constructor(
     public status: number,
     public path: string,
+    detail = "",
   ) {
-    super(`Deadlock API ${status} en ${path}`);
+    super(`Deadlock API ${status} en ${path}${detail ? `: ${detail}` : ""}`);
   }
 }
 
@@ -23,7 +24,9 @@ async function get<T>(path: string, retries = 1): Promise<T> {
     if (retries > 0) return get<T>(path, retries - 1);
     throw e;
   }
-  throw new ApiError(res.status, path);
+  // El principio del cuerpo ayuda a diagnosticar rechazos (p. ej. páginas de error del firewall de la API).
+  const detail = (await res.text().catch(() => "")).replace(/\s+/g, " ").slice(0, 200);
+  throw new ApiError(res.status, path, detail);
 }
 
 /* ---------- Tipos (solo los campos que usamos) ---------- */

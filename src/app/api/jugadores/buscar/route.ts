@@ -30,7 +30,8 @@ export async function GET(request: Request) {
       }),
     );
   } catch (e) {
-    console.error("Búsqueda de jugadores fallida:", e);
+    // El mensaje va como texto: los logs de Workers solo muestran el stack si se pasa el Error tal cual.
+    console.error(`Búsqueda de jugadores fallida: ${e instanceof Error ? e.message : String(e)}`);
     return Response.json({ error: "unavailable" }, { status: 502 });
   }
 }

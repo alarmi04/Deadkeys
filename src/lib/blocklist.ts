@@ -5,8 +5,8 @@
  * UPSTASH_REDIS_REST_URL/TOKEN o KV_REST_API_URL/TOKEN). Sin Redis, en desarrollo, usa .data/blocklist.json.
  * Además se puede fijar una lista fija con la variable privada BLOCKED_ACCOUNT_IDS (IDs separados por comas).
  */
-import { cacheLife, cacheTag } from "next/cache";
 import { promises as fs } from "node:fs";
+import { cached } from "@/lib/cache";
 import path from "node:path";
 
 export type BlockEntry = { id: number; name: string | null; note: string | null; addedAt: string };
@@ -87,17 +87,24 @@ export async function writeEntries(entries: BlockEntry[]): Promise<void> {
 
 /** Conjunto de IDs bloqueados (lista guardada + variable de entorno). Se invalida al guardar cambios. */
 export async function getBlockedSet(): Promise<Set<number>> {
-  "use cache";
-  cacheTag(BLOCKLIST_TAG);
-  cacheLife("minutes");
-  const set = new Set<number>(fromEnv());
-  try {
-    for (const e of await readEntries()) set.add(e.id);
-  } catch {
-    // Si el almacenamiento falla, se mantiene al menos la lista fija del entorno.
-  }
-  return set;
+  return new Set(await getBlockedIds());
 }
+
+// La caché guarda JSON: se cachea la lista de IDs y el Set se construye fuera.
+const getBlockedIds = cached(
+  "getBlockedIds",
+  "minutes",
+  async (): Promise<number[]> => {
+    const ids = fromEnv();
+    try {
+      for (const e of await readEntries()) ids.push(e.id);
+    } catch {
+      // Si el almacenamiento falla, se mantiene al menos la lista fija del entorno.
+    }
+    return ids;
+  },
+  [BLOCKLIST_TAG],
+);
 
 /* ---------- Jugadores ocultos en partidas ---------- */
 

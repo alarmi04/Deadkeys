@@ -1,0 +1,29 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "main": ".open-next/worker.js",
+  "name": "deadkeys",
+  "compatibility_date": "2026-11-01",
+  // no_handle_cross_request_promise_resolution: la caché de respuestas de Next comparte promesas entre
+  // peticiones; con ese comportamiento activo (por defecto en fechas recientes) toda página da error 500.
+  "compatibility_flags": ["nodejs_compat", "global_fetch_strictly_public", "no_handle_cross_request_promise_resolution"],
+  "assets": {
+    "directory": ".open-next/assets",
+    "binding": "ASSETS"
+  },
+  "services": [
+    {
+      // Autorreferencia que usa OpenNext para la caché; el nombre debe coincidir con el del Worker.
+      "binding": "WORKER_SELF_REFERENCE",
+      "service": "deadkeys"
+    }
+  ],
+  // Sin "id": wrangler deploy crea el namespace de KV automáticamente la primera vez.
+  "kv_namespaces": [
+    {
+      "binding": "NEXT_INC_CACHE_KV"
+    }
+  ],
+  "observability": {
+    "enabled": true
+  }
+}

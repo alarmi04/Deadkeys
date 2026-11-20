@@ -1,4 +1,4 @@
-import { cacheLife } from "next/cache";
+import { cached } from "@/lib/cache";
 import type { Locale } from "@/i18n/config";
 import { getBlockedSet, hiddenId } from "@/lib/blocklist";
 
@@ -132,9 +132,7 @@ export type PlayerHeroStat = {
 
 /* ---------- Datos de juego (cambian con cada parche) ---------- */
 
-export async function getHeroes(): Promise<Hero[]> {
-  "use cache: remote";
-  cacheLife("hours");
+export const getHeroes = cached("getHeroes", "hours", async (): Promise<Hero[]> => {
   type Raw = {
     id: number;
     name: string;
@@ -151,15 +149,13 @@ export async function getHeroes(): Promise<Hero[]> {
       small: h.images.icon_image_small_webp ?? h.images.icon_image_small ?? "",
       playable: h.player_selectable === true && h.disabled !== true,
     }));
-}
+});
 
-export async function getRanks(): Promise<Rank[]> {
-  "use cache: remote";
-  cacheLife("days");
+export const getRanks = cached("getRanks", "days", async (): Promise<Rank[]> => {
   type Raw = { tier: number; name: string; color: string; images: Record<string, string> };
   const raw = await get<Raw[]>("/v1/assets/ranks");
   return raw.map((r) => ({ tier: r.tier, name: r.name, color: r.color, images: r.images }));
-}
+});
 
 export function rankImage(ranks: Rank[], tier: number, subrank: number): string | null {
   const r = ranks.find((x) => x.tier === tier);
@@ -169,11 +165,9 @@ export function rankImage(ranks: Rank[], tier: number, subrank: number): string 
 /* ---------- Meta ---------- */
 
 /** Estadísticas por héroe en partidas normales de los últimos 30 días; con `tier`, solo partidas de ese rango medio. */
-export async function getHeroStats(
+export const getHeroStats = cached("getHeroStats", "hours", async (
   tier: number | null = null,
-): Promise<{ stats: HeroStat[]; totalMatches: number; since: number }> {
-  "use cache: remote";
-  cacheLife("hours");
+): Promise<{ stats: HeroStat[]; totalMatches: number; since: number }> => {
   const day = 86_400;
   const since = Math.floor(Date.now() / 1000 / day) * day - 30 * day;
   type Raw = {
@@ -203,7 +197,7 @@ export async function getHeroStats(
     }))
     .sort((a, b) => b.winRate - a.winRate);
   return { stats, totalMatches, since };
-}
+});
 
 export const REGIONS = {
   Europe: "Europa",
@@ -214,9 +208,7 @@ export const REGIONS = {
 } as const;
 export type Region = keyof typeof REGIONS;
 
-async function getLeaderboardAll(region: Region): Promise<LeaderboardEntry[]> {
-  "use cache: remote";
-  cacheLife("hours");
+const getLeaderboardAll = cached("getLeaderboardAll", "hours", async (region: Region): Promise<LeaderboardEntry[]> => {
   type Raw = {
     entries: {
       rank: number;
@@ -234,7 +226,7 @@ async function getLeaderboardAll(region: Region): Promise<LeaderboardEntry[]> {
     badge: e.badge_level ?? null,
     accountIds: e.possible_account_ids ?? [],
   }));
-}
+});
 
 /** Clasificación regional sin los jugadores bloqueados (la API da varias cuentas posibles por entrada: si alguna está bloqueada se oculta la entrada). */
 export async function getLeaderboard(region: Region, limit = 10): Promise<LeaderboardEntry[]> {
@@ -283,9 +275,7 @@ const toActive = (m: RawActive): ActiveMatch => ({
   ) as [ActivePlayer[], ActivePlayer[]],
 });
 
-async function fetchActiveMatches(limit: number): Promise<{ total: number; matches: ActiveMatch[] }> {
-  "use cache";
-  cacheLife("minutes");
+const fetchActiveMatches = cached("fetchActiveMatches", "minutes", async (limit: number): Promise<{ total: number; matches: ActiveMatch[] }> => {
   const raw = await get<RawActive[]>("/v1/matches/active");
   const matches = raw
     .filter((m) => m.game_mode_parsed === "KECitadelGameModeNormal")
@@ -293,16 +283,14 @@ async function fetchActiveMatches(limit: number): Promise<{ total: number; match
     .slice(0, limit)
     .map(toActive);
   return { total: raw.length, matches };
-}
+});
 
 /** Una partida en curso por su ID, o null si ya ha terminado. */
-async function fetchActiveMatch(matchId: number): Promise<ActiveMatch | null> {
-  "use cache";
-  cacheLife("minutes");
+const fetchActiveMatch = cached("fetchActiveMatch", "minutes", async (matchId: number): Promise<ActiveMatch | null> => {
   const raw = await get<RawActive[]>("/v1/matches/active");
   const m = raw.find((x) => x.match_id === matchId);
   return m ? toActive(m) : null;
-}
+});
 
 /** Sustituye a los jugadores bloqueados por «jugador oculto» (ID negativo, sin identidad). */
 const hideBlocked = (m: ActiveMatch, blocked: Set<number>): ActiveMatch => ({
@@ -324,12 +312,10 @@ export async function getActiveMatch(matchId: number): Promise<ActiveMatch | nul
 
 export type GameMap = { image: string; frame: string };
 
-export async function getMap(): Promise<GameMap> {
-  "use cache: remote";
-  cacheLife("days");
+export const getMap = cached("getMap", "days", async (): Promise<GameMap> => {
   const raw = await get<{ images: Record<string, string> }>("/v1/assets/map");
   return { image: raw.images.minimap, frame: raw.images.frame };
-}
+});
 
 const IMAGE_HOSTS = new Set(["clan.fastly.steamstatic.com", "clan.akamai.steamstatic.com"]);
 const ENTITIES: Record<string, string> = { amp: "&", lt: "<", gt: ">", quot: '"', apos: "'", nbsp: " " };
@@ -358,9 +344,7 @@ function patchImage(html: string): string | null {
   }
 }
 
-export async function getPatches(limit = 4): Promise<Patch[]> {
-  "use cache: remote";
-  cacheLife("hours");
+export const getPatches = cached("getPatches", "hours", async (limit: number = 4): Promise<Patch[]> => {
   type Raw = { title: string; pub_date: string; link: string; source: string; content?: string };
   const raw = await get<Raw[]>("/v2/patches");
   return raw
@@ -380,14 +364,12 @@ export async function getPatches(limit = 4): Promise<Patch[]> {
         image: patchImage(content),
       };
     });
-}
+});
 
-export async function getMatchesPerDay(): Promise<number | null> {
-  "use cache: remote";
-  cacheLife("hours");
+export const getMatchesPerDay = cached("getMatchesPerDay", "hours", async (): Promise<number | null> => {
   const raw = await get<{ fetched_matches_per_day?: number }>("/v1/info");
   return raw.fetched_matches_per_day ?? null;
-}
+});
 
 /* ---------- Detalle de héroe ---------- */
 
@@ -451,9 +433,7 @@ type RawItem = RawAbility & {
  * Objetos y fichas de habilidad salen del mismo listado (~500 KB por idioma): se descarga una sola vez
  * por idioma y se guarda ya convertido, en lugar de pedirlo por separado para cada uso.
  */
-async function getItemData(lang: Locale): Promise<{ items: Item[]; tips: Record<string, AbilityTip> }> {
-  "use cache: remote";
-  cacheLife("days");
+const getItemData = cached("getItemData", "days", async (lang: Locale): Promise<{ items: Item[]; tips: Record<string, AbilityTip> }> => {
   const [raw, es] = await Promise.all([
     get<RawItem[]>("/v1/assets/items"),
     lang === "es" ? get<RawItem[]>("/v1/assets/items?language=spanish").catch(() => null) : Promise.resolve(null),
@@ -463,7 +443,7 @@ async function getItemData(lang: Locale): Promise<{ items: Item[]; tips: Record<
   NF = NUMBER_FORMATS[es ? lang : "en"];
   const tips = Object.fromEntries(local.filter((i) => i.type === "ability").map((i) => [i.class_name, toTip(i)]));
   return { items: toItems(raw, es ?? []), tips };
-}
+});
 
 export async function getItems(lang: Locale = "es"): Promise<Item[]> {
   return (await getItemData(lang)).items;
@@ -494,9 +474,7 @@ export async function getHeroDetail(heroId: number, lang: Locale = "es"): Promis
 }
 
 /** Ficha de todos los héroes a la vez: los dos listados (~200 KB cada uno) se piden una vez, no una por héroe. */
-async function getHeroDetails(lang: Locale): Promise<Record<number, HeroDetail>> {
-  "use cache: remote";
-  cacheLife("hours");
+const getHeroDetails = cached("getHeroDetails", "hours", async (lang: Locale): Promise<Record<number, HeroDetail>> => {
   type Pop = { item_id: number; pick_pct: number; winrate_pct: number }[];
   type Raw = {
     id: number;
@@ -545,7 +523,7 @@ async function getHeroDetails(lang: Locale): Promise<Record<number, HeroDetail>>
     };
   };
   return Object.fromEntries(all.map((h) => [h.id, toDetail(h)]));
-}
+});
 
 /** Lo que necesita la pantalla de selección de héroes: retratos, fondo, etiquetas e iconos de habilidades. */
 export type HeroShowcase = {
@@ -748,9 +726,7 @@ export async function getAbilityTips(lang: Locale = "es"): Promise<Record<string
   return (await getItemData(lang)).tips;
 }
 
-export async function getHeroShowcase(lang: Locale = "es"): Promise<HeroShowcase[]> {
-  "use cache: remote";
-  cacheLife("hours");
+export const getHeroShowcase = cached("getHeroShowcase", "hours", async (lang: Locale = "es"): Promise<HeroShowcase[]> => {
   type Raw = {
     id: number;
     name: string;
@@ -787,16 +763,14 @@ export async function getHeroShowcase(lang: Locale = "es"): Promise<HeroShowcase
         .map((i) => ({ name: i.name, image: i.image, tip: tips[i.className] ?? null })),
     };
   });
-}
+});
 
 /**
  * El busto no viene en el listado de héroes: se deduce del nombre de la tarjeta
  * (inferno_card.png → inferno.webp) y solo se usa si existe; los héroes recientes no lo tienen.
  * Comprobarlo cuesta una petición por héroe, así que el resultado se guarda días (cambia solo si cambian las tarjetas).
  */
-async function getHeroBusts(cards: string[]): Promise<(string | null)[]> {
-  "use cache: remote";
-  cacheLife("days");
+const getHeroBusts = cached("getHeroBusts", "days", async (cards: string[]): Promise<(string | null)[]> => {
   return Promise.all(
     cards.map(async (card) => {
       const url = card.replace(/_card\.png$/, ".webp");
@@ -806,12 +780,10 @@ async function getHeroBusts(cards: string[]): Promise<(string | null)[]> {
       return ok ? url : null;
     }),
   );
-}
+});
 
 /** Builds de la comunidad más populares esta semana (última versión de cada una). */
-export async function getHeroBuilds(heroId: number, limit = 3): Promise<HeroBuild[]> {
-  "use cache: remote";
-  cacheLife("hours");
+export const getHeroBuilds = cached("getHeroBuilds", "hours", async (heroId: number, limit = 3): Promise<HeroBuild[]> => {
   type Raw = {
     num_favorites: number | null;
     num_weekly_favorites: number | null;
@@ -838,7 +810,7 @@ export async function getHeroBuilds(heroId: number, limit = 3): Promise<HeroBuil
       itemIds: c.mods.map((m) => m.ability_id),
     })),
   }));
-}
+});
 
 /* ---------- Builds: rendimiento por héroe y rango ---------- */
 
@@ -878,12 +850,10 @@ function badgeRange(tier: number | null): string {
 }
 
 /** Builds más jugadas en los últimos 7 días, opcionalmente de un héroe y un rango. */
-export async function getBuildStats(
+export const getBuildStats = cached("getBuildStats", "hours", async (
   heroId: number | null,
   tier: number | null,
-): Promise<{ builds: BuildStat[]; since: number }> {
-  "use cache: remote";
-  cacheLife("hours");
+): Promise<{ builds: BuildStat[]; since: number }> => {
   type Raw = { hero_id: number; hero_build_id: number; wins: number; matches: number; players: number };
   const since = weekAgo();
   // Con un héroe entran todas las builds. Sin héroe, la respuesta completa pesa ~10 MB y tarda segundos:
@@ -904,12 +874,10 @@ export async function getBuildStats(
     }))
     .sort((a, b) => b.matches - a.matches);
   return { builds, since };
-}
+});
 
 /** Última versión publicada de una build. */
-export async function getBuild(buildId: number): Promise<BuildDetail | null> {
-  "use cache: remote";
-  cacheLife("hours");
+export const getBuild = cached("getBuild", "hours", async (buildId: number): Promise<BuildDetail | null> => {
   type Raw = {
     hero_build: {
       hero_id: number;
@@ -949,7 +917,7 @@ export async function getBuild(buildId: number): Promise<BuildDetail | null> {
         items: c.mods.map((m) => ({ itemId: m.ability_id, annotation: m.annotation ?? "" })),
       })),
   };
-}
+});
 
 /**
  * Varias builds a la vez (la API no admite pedirlas por lotes). Las peticiones van en tandas para no
@@ -996,9 +964,7 @@ function sectionNameRaw(name: string): string {
 }
 
 /** Objetos comprados por quienes jugaron con una build (mismos 7 días y rango). */
-export async function getBuildItemStats(buildId: number, tier: number | null): Promise<BuildItemStat[]> {
-  "use cache: remote";
-  cacheLife("hours");
+export const getBuildItemStats = cached("getBuildItemStats", "hours", async (buildId: number, tier: number | null): Promise<BuildItemStat[]> => {
   type Raw = { item_id: number; matches: number; wins: number; avg_buy_time_s: number | null };
   const raw = await get<Raw[]>(
     `/v1/analytics/item-stats?hero_build_id=${buildId}&min_unix_timestamp=${weekAgo()}${badgeRange(tier)}`,
@@ -1009,7 +975,7 @@ export async function getBuildItemStats(buildId: number, tier: number | null): P
     wins: r.wins,
     avgBuyTime: r.avg_buy_time_s ?? null,
   }));
-}
+});
 
 /* ---------- Jugadores ---------- */
 
@@ -1034,14 +1000,12 @@ const toProfile = (s: RawSteam): SteamProfile => ({
 });
 
 /** Búsqueda sin filtrar: solo para el panel de administración. */
-export async function searchPlayersRaw(query: string): Promise<SteamProfile[]> {
-  "use cache";
-  cacheLife("minutes");
+export const searchPlayersRaw = cached("searchPlayersRaw", "minutes", async (query: string): Promise<SteamProfile[]> => {
   const raw = await get<RawSteam[]>(
     `/v1/players/steam-search?search_query=${encodeURIComponent(query)}&limit=24`,
   );
   return raw.map(toProfile);
-}
+});
 
 export async function searchPlayers(query: string): Promise<SteamProfile[]> {
   const [list, blocked] = await Promise.all([searchPlayersRaw(query), getBlockedSet()]);
@@ -1055,9 +1019,7 @@ export async function getPlayerRanks(accountIds: number[]): Promise<Record<numbe
   return allowed.length === 0 ? {} : fetchPlayerRanks(allowed);
 }
 
-async function fetchPlayerRanks(accountIds: number[]): Promise<Record<number, PlayerRank>> {
-  "use cache: remote";
-  cacheLife("hours");
+const fetchPlayerRanks = cached("fetchPlayerRanks", "hours", async (accountIds: number[]): Promise<Record<number, PlayerRank>> => {
   const ids = [...new Set(accountIds)].sort((a, b) => a - b);
   if (ids.length === 0) return {};
   const raw = await get<{ account_id: number; badge: number; rank: number; subrank: number }[]>(
@@ -1066,17 +1028,15 @@ async function fetchPlayerRanks(accountIds: number[]): Promise<Record<number, Pl
   return Object.fromEntries(
     raw.filter((r) => r.badge > 0).map((r) => [r.account_id, { badge: r.badge, tier: r.rank, subrank: r.subrank }]),
   );
-}
+});
 
 /** Nombres de Steam de varias cuentas a la vez (las que no se conocen no aparecen). */
-async function fetchPlayerNames(accountIds: number[]): Promise<Record<number, string>> {
-  "use cache: remote";
-  cacheLife("hours");
+const fetchPlayerNames = cached("fetchPlayerNames", "hours", async (accountIds: number[]): Promise<Record<number, string>> => {
   const ids = [...new Set(accountIds)].sort((a, b) => a - b);
   if (ids.length === 0) return {};
   const raw = await get<RawSteam[]>(`/v1/players/steam?account_ids=${ids.join(",")}`);
   return Object.fromEntries(raw.map((s) => [s.account_id, s.personaname]));
-}
+});
 
 export async function getPlayerNames(accountIds: number[]): Promise<Record<number, string>> {
   const [names, blocked] = await Promise.all([fetchPlayerNames(accountIds), getBlockedSet()]);
@@ -1086,9 +1046,7 @@ export async function getPlayerNames(accountIds: number[]): Promise<Record<numbe
 export type PlayerMate = { accountId: number; matches: number; wins: number };
 
 /** Compañeros de equipo con los que más partidas ha jugado (de todos los modos), de más a menos. */
-async function fetchPlayerMates(accountId: number, limit: number): Promise<PlayerMate[]> {
-  "use cache";
-  cacheLife("minutes");
+const fetchPlayerMates = cached("fetchPlayerMates", "minutes", async (accountId: number, limit: number): Promise<PlayerMate[]> => {
   const raw = await get<{ mate_id: number; wins: number; matches_played: number }[]>(
     `/v1/players/${accountId}/mate-stats`,
   );
@@ -1097,7 +1055,7 @@ async function fetchPlayerMates(accountId: number, limit: number): Promise<Playe
     .map((r) => ({ accountId: r.mate_id, matches: r.matches_played, wins: r.wins }))
     .sort((a, b) => b.matches - a.matches)
     .slice(0, limit);
-}
+});
 
 export async function getPlayerMates(accountId: number, limit = 6): Promise<PlayerMate[]> {
   const [mates, blocked] = await Promise.all([fetchPlayerMates(accountId, 100), getBlockedSet()]);
@@ -1106,14 +1064,12 @@ export async function getPlayerMates(accountId: number, limit = 6): Promise<Play
 
 /** Perfiles de Steam de varias cuentas a la vez (las que no se conocen no aparecen). */
 /** Perfiles sin filtrar: solo para el panel de administración. */
-export async function getSteamProfilesRaw(accountIds: number[]): Promise<Record<number, SteamProfile>> {
-  "use cache";
-  cacheLife("hours");
+export const getSteamProfilesRaw = cached("getSteamProfilesRaw", "hours", async (accountIds: number[]): Promise<Record<number, SteamProfile>> => {
   const ids = [...new Set(accountIds)].sort((a, b) => a - b);
   if (ids.length === 0) return {};
   const raw = await get<RawSteam[]>(`/v1/players/steam?account_ids=${ids.join(",")}`);
   return Object.fromEntries(raw.map((s) => [s.account_id, toProfile(s)]));
-}
+});
 
 export async function getSteamProfiles(accountIds: number[]): Promise<Record<number, SteamProfile>> {
   const [profiles, blocked] = await Promise.all([getSteamProfilesRaw(accountIds), getBlockedSet()]);
@@ -1121,24 +1077,20 @@ export async function getSteamProfiles(accountIds: number[]): Promise<Record<num
 }
 
 /** Sin comprobar la lista de bloqueo: usar getSteamProfile. */
-async function getSteamProfileCached(accountId: number): Promise<SteamProfile | null> {
-  "use cache";
-  cacheLife("hours");
+const getSteamProfileCached = cached("getSteamProfileCached", "hours", async (accountId: number): Promise<SteamProfile | null> => {
   const raw = await get<RawSteam[]>(`/v1/players/steam?account_ids=${accountId}`);
   return raw[0] ? toProfile(raw[0]) : null;
-}
+});
 
 export async function getSteamProfile(accountId: number): Promise<SteamProfile | null> {
   return (await getBlockedSet()).has(accountId) ? null : getSteamProfileCached(accountId);
 }
 
 /** Sin comprobar la lista de bloqueo: usar getPlayerRank. */
-async function getPlayerRankCached(accountId: number): Promise<PlayerRank | null> {
-  "use cache";
-  cacheLife("minutes");
+const getPlayerRankCached = cached("getPlayerRankCached", "minutes", async (accountId: number): Promise<PlayerRank | null> => {
   const raw = await get<{ badge: number; rank: number; subrank: number }>(`/v1/players/${accountId}/rank`);
   return raw.badge > 0 ? { badge: raw.badge, tier: raw.rank, subrank: raw.subrank } : null;
-}
+});
 
 export async function getPlayerRank(accountId: number): Promise<PlayerRank | null> {
   return (await getBlockedSet()).has(accountId) ? null : getPlayerRankCached(accountId);
@@ -1147,9 +1099,7 @@ export async function getPlayerRank(accountId: number): Promise<PlayerRank | nul
 export type RankBin = { badge: number; tier: number; subrank: number; players: number };
 
 /** Cuántos jugadores hay en cada subrango (badge = rango × 10 + subrango), de menor a mayor. */
-export async function getRankDistribution(): Promise<RankBin[]> {
-  "use cache: remote";
-  cacheLife("hours");
+export const getRankDistribution = cached("getRankDistribution", "hours", async (): Promise<RankBin[]> => {
   const raw = await get<{ badge: number; rank: number; subrank: number; players: number }[]>(
     "/v1/players/rank/distribution",
   );
@@ -1157,7 +1107,7 @@ export async function getRankDistribution(): Promise<RankBin[]> {
     .filter((r) => r.badge > 0)
     .map((r) => ({ badge: r.badge, tier: r.rank, subrank: r.subrank, players: r.players }))
     .sort((a, b) => a.badge - b.badge);
-}
+});
 
 export type LeaderboardSpot = { region: Region; rank: number; /** Nombre de la entrada, para confirmar que es el mismo jugador. */ name: string };
 
@@ -1165,9 +1115,7 @@ export type LeaderboardSpot = { region: Region; rank: number; /** Nombre de la e
  * Puesto en las clasificaciones regionales de cada cuenta que aparece como candidata en alguna entrada.
  * Las entradas traen varios IDs posibles, no uno confirmado: quien use esto debe comprobar también el nombre.
  */
-async function fetchLeaderboardIndex(): Promise<Record<number, LeaderboardSpot>> {
-  "use cache: remote";
-  cacheLife("hours");
+const fetchLeaderboardIndex = cached("fetchLeaderboardIndex", "hours", async (): Promise<Record<number, LeaderboardSpot>> => {
   // Reutiliza la caché de cada clasificación regional (la misma que usan la portada y el tracker).
   const regions = Object.keys(REGIONS) as Region[];
   const results = await Promise.allSettled(regions.map((r) => getLeaderboardAll(r)));
@@ -1182,7 +1130,7 @@ async function fetchLeaderboardIndex(): Promise<Record<number, LeaderboardSpot>>
     }
   });
   return out;
-}
+});
 
 export async function getLeaderboardIndex(): Promise<Record<number, LeaderboardSpot>> {
   const [index, blocked] = await Promise.all([fetchLeaderboardIndex(), getBlockedSet()]);
@@ -1190,9 +1138,7 @@ export async function getLeaderboardIndex(): Promise<Record<number, LeaderboardS
 }
 
 /** Sin comprobar la lista de bloqueo: usar getMatchHistory. */
-async function getMatchHistoryCached(accountId: number): Promise<MatchRow[]> {
-  "use cache";
-  cacheLife("minutes");
+const getMatchHistoryCached = cached("getMatchHistoryCached", "minutes", async (accountId: number): Promise<MatchRow[]> => {
   type Raw = {
     match_id: number;
     hero_id: number;
@@ -1223,16 +1169,14 @@ async function getMatchHistoryCached(accountId: number): Promise<MatchRow[]> {
     ranked: m.match_mode === 4,
     abandoned: (m.abandoned_time_s ?? 0) > 0,
   }));
-}
+});
 
 export async function getMatchHistory(accountId: number): Promise<MatchRow[]> {
   return (await getBlockedSet()).has(accountId) ? [] : getMatchHistoryCached(accountId);
 }
 
 /** Sin comprobar la lista de bloqueo: usar getPlayerHeroStats. */
-async function getPlayerHeroStatsCached(accountId: number): Promise<PlayerHeroStat[]> {
-  "use cache";
-  cacheLife("minutes");
+const getPlayerHeroStatsCached = cached("getPlayerHeroStatsCached", "minutes", async (accountId: number): Promise<PlayerHeroStat[]> => {
   type Raw = {
     hero_id: number;
     matches_played: number;
@@ -1256,7 +1200,7 @@ async function getPlayerHeroStatsCached(accountId: number): Promise<PlayerHeroSt
       lastPlayed: r.last_played,
     }))
     .sort((a, b) => b.matches - a.matches);
-}
+});
 
 export async function getPlayerHeroStats(accountId: number): Promise<PlayerHeroStat[]> {
   return (await getBlockedSet()).has(accountId) ? [] : getPlayerHeroStatsCached(accountId);
@@ -1284,9 +1228,7 @@ export type ItemInfo = {
 };
 
 /** Qué hace un objeto: descripción en el idioma pedido y sus propiedades numéricas relevantes. */
-export async function getItemInfo(itemId: number, lang: Locale = "es"): Promise<ItemInfo | null> {
-  "use cache: remote";
-  cacheLife("days");
+export const getItemInfo = cached("getItemInfo", "days", async (itemId: number, lang: Locale = "es"): Promise<ItemInfo | null> => {
   type Prop = { value?: string | number; label?: string; postfix?: string; prefix?: string; postvalue_label?: string };
   type Section = {
     section_type?: string;
@@ -1340,7 +1282,7 @@ export async function getItemInfo(itemId: number, lang: Locale = "es"): Promise<
     cooldown: cooldown?.value ?? null,
     properties,
   };
-}
+});
 
 export type ItemBuyStat = { matches: number; winRate: number; avgBuyTime: number; avgBuyRelative: number };
 
@@ -1360,9 +1302,7 @@ function monthAgo(): number {
 }
 
 /** Cuándo y cuánto se compra cada objeto (partidas normales, 30 días). */
-export async function getItemBuyStats(): Promise<Record<number, ItemBuyStat>> {
-  "use cache: remote";
-  cacheLife("hours");
+export const getItemBuyStats = cached("getItemBuyStats", "hours", async (): Promise<Record<number, ItemBuyStat>> => {
   const raw = await get<RawItemStat[]>(
     `/v1/analytics/item-stats?game_mode=normal&min_unix_timestamp=${monthAgo()}&min_matches=50`,
   );
@@ -1377,7 +1317,7 @@ export async function getItemBuyStats(): Promise<Record<number, ItemBuyStat>> {
       },
     ]),
   );
-}
+});
 
 /** [heroId o enemyHeroId, partidas, victorias] por objeto. */
 export type ItemHeroRow = [number, number, number];
@@ -1401,18 +1341,14 @@ async function itemBuckets(bucket: "hero" | "enemy_hero", days: number): Promise
 }
 
 /** Quién compra cada objeto y con qué resultado, por héroe propio. */
-export async function getItemsByHero(): Promise<Record<number, ItemHeroRow[]>> {
-  "use cache: remote";
-  cacheLife("hours");
+export const getItemsByHero = cached("getItemsByHero", "hours", async (): Promise<Record<number, ItemHeroRow[]>> => {
   return itemBuckets("hero", 30);
-}
+});
 
 /** Cómo rinde cada objeto según el héroe enemigo al que se enfrenta (últimos 7 días: la consulta es pesada). */
-export async function getItemsByEnemy(): Promise<Record<number, ItemHeroRow[]>> {
-  "use cache: remote";
-  cacheLife("hours");
+export const getItemsByEnemy = cached("getItemsByEnemy", "hours", async (): Promise<Record<number, ItemHeroRow[]>> => {
   return itemBuckets("enemy_hero", 7);
-}
+});
 
 /* ---------- Detalle de partida ---------- */
 
@@ -1459,9 +1395,7 @@ export type MatchDetail = {
 const GAME_MODE_LABEL: Record<number, string> = { 1: "Normal", 4: "Street Brawl" };
 
 /** Resultado completo de una partida terminada. La API tarda en tener las más recientes: devuelve error si no está. */
-async function fetchMatchDetail(matchId: number): Promise<MatchDetail> {
-  "use cache: remote";
-  cacheLife("hours");
+const fetchMatchDetail = cached("fetchMatchDetail", "hours", async (matchId: number): Promise<MatchDetail> => {
   type Snap = {
     time_stamp_s: number;
     net_worth: number;
@@ -1544,7 +1478,7 @@ async function fetchMatchDetail(matchId: number): Promise<MatchDetail> {
     players,
     banned: raw.banned_hero_ids ?? [],
   };
-}
+});
 
 export async function getMatchDetail(matchId: number): Promise<MatchDetail> {
   const [m, blocked] = await Promise.all([fetchMatchDetail(matchId), getBlockedSet()]);
@@ -1562,9 +1496,7 @@ export async function getHeroMatchups(heroId: number, limit = 5): Promise<{ stro
 }
 
 /** Cruces de cada héroe, de mejor a peor: la tabla (~200 KB) se pide una vez para todos los héroes. */
-async function getMatchupTable(): Promise<Record<number, Matchup[]>> {
-  "use cache: remote";
-  cacheLife("hours");
+const getMatchupTable = cached("getMatchupTable", "hours", async (): Promise<Record<number, Matchup[]>> => {
   type Raw = { hero_id: number; enemy_hero_id: number; wins: number; matches_played: number };
   const raw = await get<Raw[]>(`/v1/analytics/hero-counter-stats?game_mode=normal&min_unix_timestamp=${monthAgo()}`);
   const out: Record<number, Matchup[]> = {};
@@ -1575,7 +1507,7 @@ async function getMatchupTable(): Promise<Record<number, Matchup[]>> {
   }
   for (const rows of Object.values(out)) rows.sort((a, b) => b.winRate - a.winRate);
   return out;
-}
+});
 
 /* ---------- Enfrentamiento: un héroe contra otro ---------- */
 
@@ -1616,13 +1548,11 @@ type RawCounter = {
  * Todos los cruces de héroes en la partida completa (no solo en el mismo carril),
  * partidas normales de los últimos 30 días. Una sola consulta sirve para cualquier pareja.
  */
-async function getCounterTable(): Promise<RawCounter[]> {
-  "use cache: remote";
-  cacheLife("hours");
+const getCounterTable = cached("getCounterTable", "hours", async (): Promise<RawCounter[]> => {
   return get<RawCounter[]>(
     `/v1/analytics/hero-counter-stats?game_mode=normal&same_lane_filter=false&min_unix_timestamp=${monthAgo()}`,
   );
-}
+});
 
 /** Cara a cara de `a` contra `b`, o null si no hay partidas entre ellos. */
 export async function getDuel(a: number, b: number): Promise<Duel | null> {
@@ -1663,23 +1593,19 @@ function toRecords(raw: RawItemStat[]): Record<number, ItemRecord> {
 }
 
 /** Cómo rinde cada objeto con un héroe en general (partidas normales, 30 días). */
-export async function getHeroItemRecords(heroId: number): Promise<Record<number, ItemRecord>> {
-  "use cache: remote";
-  cacheLife("hours");
+export const getHeroItemRecords = cached("getHeroItemRecords", "hours", async (heroId: number): Promise<Record<number, ItemRecord>> => {
   return toRecords(
     await get<RawItemStat[]>(
       `/v1/analytics/item-stats?game_mode=normal&hero_id=${heroId}&min_unix_timestamp=${monthAgo()}&min_matches=20`,
     ),
   );
-}
+});
 
 /** Cómo rinde cada objeto con el héroe `a` en partidas contra `b` (partidas normales, 30 días). */
-export async function getMatchupItemRecords(a: number, b: number): Promise<Record<number, ItemRecord>> {
-  "use cache: remote";
-  cacheLife("hours");
+export const getMatchupItemRecords = cached("getMatchupItemRecords", "hours", async (a: number, b: number): Promise<Record<number, ItemRecord>> => {
   return toRecords(
     await get<RawItemStat[]>(
       `/v1/analytics/item-stats?game_mode=normal&hero_id=${a}&enemy_hero_ids=${b}&min_unix_timestamp=${monthAgo()}&min_matches=20`,
     ),
   );
-}
+});

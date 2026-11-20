@@ -38,7 +38,6 @@ const nextConfig: NextConfig = {
       { source: "/:lang/admin", headers: [{ key: "Cache-Control", value: "no-store" }] },
     ];
   },
-  cacheComponents: true,
   // Rendimiento pasó al menú de herramientas: los enlaces antiguos siguen funcionando.
   async redirects() {
     return [
@@ -49,7 +48,6 @@ const nextConfig: NextConfig = {
       { source: "/herramientas/rendimiento", destination: "/herramientas/rendimiento/complock", permanent: false },
     ];
   },
-  partialPrefetching: true,
   images: {
     // Los retratos e iconos de la API no mandan Cache-Control: sin esto, cada imagen optimizada se
     // regenera cada 4 h. Cambian como mucho con los parches, así que se guardan 30 días.

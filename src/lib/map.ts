@@ -1,4 +1,4 @@
-import { cacheLife } from "next/cache";
+import { cached } from "@/lib/cache";
 
 const API = "https://api.deadlock-api.com";
 
@@ -131,9 +131,7 @@ const BUFF_LABELS: Record<string, { label: string; icon: string }> = {
   movement: { label: "Movimiento", icon: "powerup_movement.svg" },
 };
 
-export async function getMapDetail(): Promise<MapDetail> {
-  "use cache";
-  cacheLife("days");
+export const getMapDetail = cached("getMapDetail", "days", async (): Promise<MapDetail> => {
   const [raw, generic, misc, iconList] = await Promise.all([
     (async () => {
       const res = await fetch(`${API}/v1/assets/map`, { headers: { accept: "application/json" } });
@@ -236,4 +234,4 @@ export async function getMapDetail(): Promise<MapDetail> {
     crates: e.crates.map(pt),
     toughCrates: e.tough_crates.map(pt),
   };
-}
+});

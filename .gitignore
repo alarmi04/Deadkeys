@@ -40,5 +40,10 @@ yarn-error.log*
 *.tsbuildinfo
 next-env.d.ts
 
+# cloudflare (OpenNext / wrangler)
+/.open-next/
+/.wrangler/
+.dev.vars*
+
 # lista de bloqueo local (desarrollo)
 /.data/

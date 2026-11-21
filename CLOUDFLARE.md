@@ -21,8 +21,8 @@ En el dashboard, Workers & Pages → `deadkeys` → Settings → Build:
 
 ## Archivos
 
-- [wrangler.jsonc](wrangler.jsonc): Worker, flags de compatibilidad, assets, autorreferencia y KV.
-- [open-next.config.ts](open-next.config.ts): caché incremental de Next en KV (`kvIncrementalCache`).
+- [wrangler.jsonc](wrangler.jsonc): Worker, flags de compatibilidad, assets, autorreferencia y rate limits.
+- [open-next.config.ts](open-next.config.ts): caché incremental de Next en la Cache API de Workers, con el prerenderizado servido desde los static assets. Sin KV.
 - [src/lib/cache.ts](src/lib/cache.ts): helper `cached()` para cachear datos.
 - Scripts de `package.json`:
   - `cf:build`: compila para Workers.
@@ -55,7 +55,7 @@ export const getAlgo = cached("getAlgo", "hours", async (id: number): Promise<Al
 
 - La clave es el nombre más los argumentos. Los argumentos y el resultado deben ser **serializables a JSON**: nada de `Map`, `Set` ni `Date`. Ejemplo: `getBlockedSet()` cachea un `number[]` y construye el `Set` fuera.
 - Se cachea el **resultado procesado**, no la respuesta cruda de la API. Algunas respuestas pesan casi 2 MB.
-- La caché vive en el KV `NEXT_INC_CACHE_KV` y sobrevive a los deploys.
+- La caché vive en la **Cache API** de Workers: es gratis y no tiene límite de escrituras, pero es de cada centro de datos y se vacía en cada deploy, porque la clave incluye el buildId.
 
 ### 3. Todo `fetch` a la API de Deadlock lleva `User-Agent`
 
@@ -70,11 +70,11 @@ Los flags de `compatibility_flags` en `wrangler.jsonc` son necesarios:
 - `nodejs_compat`: Next y el código usan `crypto`, `fs`, etc.
 - `no_handle_cross_request_promise_resolution`: la caché de respuestas de Next comparte promesas entre peticiones. Sin este flag, que viene activo por defecto con fechas recientes, toda página da 500 (*"This promise was created by a request that has since ended"*).
 
-### 5. El KV ya existe
+### 5. No usar KV para la caché
 
-El namespace `deadkeys-next-inc-cache-kv` (ID `060a532456564ae588433db23b7fb764`) está fijo en `wrangler.jsonc`.
+El plan gratis de KV solo admite **1000 escrituras al día**. Cada `cached()` que se recalcula escribe una entrada, y cada deploy subía unas 40 más. Al agotarse el límite, el deploy fallaba con *"your account has reached the free usage limit for this operation for today [code: 10048]"*.
 
-No hay que quitar el `id`. Sin él, `opennextjs-cloudflare deploy` intenta llenar la caché antes de que exista el KV y falla con *"No KV namespace ID found for binding NEXT_INC_CACHE_KV"*.
+Por eso [open-next.config.ts](open-next.config.ts) usa `withRegionalCache` (Cache API) sobre una versión de solo lectura de la caché de static assets. Al desplegar, `opennextjs-cloudflare deploy` copia el prerenderizado a `.open-next/assets/cdn-cgi/_next_cache` en vez de subirlo a KV. No hay que volver a poner `kvIncrementalCache` ni el binding `NEXT_INC_CACHE_KV`.
 
 ### 6. Límite de peticiones (rate limit)
 
@@ -113,7 +113,7 @@ Sin Redis, la lista de bloqueados del panel admin, el rate-limit y las sesiones 
 | Error 1101 / *"Worker's code had hung"* | Se ha reintroducido Cache Components, o falta el flag `no_handle_cross_request_promise_resolution`. |
 | Perfil de jugador → "no encontrado"; búsqueda → 502 | Falta el `User-Agent` en las llamadas a `/v1/players/*`. Busca `fallida` en Observability: el log incluye el código HTTP. |
 | *"Could not find compiled Open Next config"* | El build command no es `npx opennextjs-cloudflare build`. |
-| *"No KV namespace ID found…"* | Falta el `id` del KV en `wrangler.jsonc`. |
+| *"free usage limit for this operation for today [code: 10048]"* | Se ha vuelto a usar KV para la caché, que tiene un límite de 1000 escrituras al día. |
 | Error 1102 | Límite de CPU del plan gratis. |
 | Una lista sale vacía en producción pero bien en local | Más de 50 subpeticiones en esa visita (plan gratis). |
 

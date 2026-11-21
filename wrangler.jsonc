@@ -17,13 +17,6 @@
       "service": "deadkeys"
     }
   ],
-  // Namespace "deadkeys-next-inc-cache-kv" (creado automáticamente en el primer deploy).
-  "kv_namespaces": [
-    {
-      "binding": "NEXT_INC_CACHE_KV",
-      "id": "060a532456564ae588433db23b7fb764"
-    }
-  ],
   // Rate Limiting nativo de Workers, por IP (src/lib/rate-limit.ts). period solo admite 10 o 60 segundos.
   // namespace_id es un número elegido libremente, único en la cuenta de Cloudflare.
   "ratelimits": [

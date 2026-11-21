@@ -12,7 +12,6 @@ import { FilterLink, FilterResults, FilterScope, HeroCombobox, PendingNote } fro
 import { PageHeader } from "@/components/PageHeader";
 import { Unavailable } from "@/components/Unavailable";
 import {
-  type BuildStat,
   type Rank,
   getBuildStats,
   getBuilds,
@@ -35,8 +34,6 @@ export async function generateMetadata({ params }: PageProps<"/[lang]/builds">):
 
 const ROMAN_SUB = ["", "I", "II", "III", "IV", "V", "VI"];
 const PAGE = 30;
-/** Con filtro de rango del autor se examinan las builds más jugadas hasta este tope. */
-const CANDIDATES = 250;
 const MAX = 90;
 /** Por debajo de este número de partidas el porcentaje es ruido: al ordenar por victorias van al final. */
 const MIN_MATCHES = 20;
@@ -90,7 +87,7 @@ async function BuildsView({ searchParams }: { searchParams: PageProps<"/[lang]/b
 
   // Las builds y su detalle se piden ya, en paralelo con lo que necesitan los filtros: los filtros se
   // muestran en cuanto llegan héroes y rangos, y la lista entra después en su propio Suspense.
-  const stats = safe(getBuildStats(heroParam, null));
+  const stats = safe(getBuildStats(heroParam, tierParam));
   const rows = stats.then((s) => (s && s.builds.length > 0 ? loadRows(s, f) : null));
   const items = safe(getItems(m.lang));
   const [heroes, ranks, heroStats] = await Promise.all([safe(getHeroes()), safe(getRanks()), safe(getHeroStats())]);
@@ -150,15 +147,19 @@ async function BuildsView({ searchParams }: { searchParams: PageProps<"/[lang]/b
 type Stats = Awaited<ReturnType<typeof getBuildStats>>;
 type Rows = Awaited<ReturnType<typeof loadRows>>;
 
-/** Builds candidatas, su detalle y el nombre y rango de sus autores (no lanza: lo que falla queda fuera). */
+/**
+ * Detalle de las builds visibles y nombre y rango de sus autores (no lanza: lo que falla queda fuera).
+ * El filtro de rango (rango medio de la partida) ya lo aplica la API, así que solo se piden las builds
+ * que se muestran: en Workers gratis cada visita admite 50 subpeticiones y cada build es una.
+ */
 async function loadRows(stats: Stats, f: Filters) {
-  // Sin filtro de rango solo se cargan las builds visibles; con él, las candidatas más jugadas.
   const ordered = sortBuilds(stats.builds, f.sort);
-  const pool: BuildStat[] = f.tier === null ? ordered.slice(0, Math.min(MAX, f.n + 1)) : stats.builds.slice(0, CANDIDATES);
-  const detailById = await getBuilds(pool.map((b) => b.buildId));
+  const ids = ordered.slice(0, Math.min(MAX, f.n + 1)).map((b) => b.buildId);
+  if (f.build !== null && ordered.some((b) => b.buildId === f.build)) ids.push(f.build);
+  const detailById = await getBuilds(ids);
   const authorIds = [...detailById.values()].map((d) => d.authorId);
   const [names, ranks] = await Promise.all([safe(getPlayerNames(authorIds)), safe(getPlayerRanks(authorIds))]);
-  return { ordered, pool, detailById, names: names ?? {}, ranks: ranks ?? {} };
+  return { ordered, detailById, names: names ?? {}, ranks: ranks ?? {} };
 }
 
 async function Results({
@@ -189,6 +190,17 @@ async function Results({
     );
   }
   if (stats.builds.length === 0 || !loaded) {
+    if (f.tier !== null) {
+      return (
+        <p className="mt-8 max-w-[64ch] text-ivory-dim">
+          {t.noneForRank(heroName(f, heroById, t), rank?.name ?? "")}{" "}
+          <FilterLink href={href(f, { tier: null, build: null })} className="text-brass underline">
+            {t.allRanks}
+          </FilterLink>
+          .
+        </p>
+      );
+    }
     return (
       <p className="mt-8 max-w-[64ch] text-ivory-dim">
         {t.noneThisWeek}
@@ -196,35 +208,13 @@ async function Results({
     );
   }
 
-  const { ordered, pool, detailById, names, ranks } = loaded;
+  const { ordered: matching, detailById, names, ranks } = loaded;
   const badges: Record<number, BrowserBadge> = {};
   for (const [id, r] of Object.entries(ranks)) {
     const info = allRanks.find((x) => x.tier === r.tier);
     const img = info?.images[`large_subrank${r.subrank}_webp`] ?? info?.images[`large_subrank${r.subrank}`] ?? rankImage(allRanks, r.tier, r.subrank);
     const name = info?.name;
     if (img && name) badges[Number(id)] = { image: img, label: `${name} ${ROMAN_SUB[r.subrank] ?? r.subrank}` };
-  }
-
-  const matching =
-    f.tier === null
-      ? ordered
-      : sortBuilds(
-          pool.filter((b) => {
-            const d = detailById.get(b.buildId);
-            return d !== undefined && ranks[d.authorId]?.tier === f.tier;
-          }),
-          f.sort,
-        );
-  if (matching.length === 0) {
-    return (
-      <p className="mt-8 max-w-[64ch] text-ivory-dim">
-        {t.noneForRank(num(pool.length), heroName(f, heroById, t), rank?.name ?? "")}{" "}
-        <FilterLink href={href(f, { tier: null, build: null })} className="text-brass underline">
-          {t.allRanks}
-        </FilterLink>
-        .
-      </p>
-    );
   }
 
   const shown = matching.slice(0, f.n);
@@ -252,7 +242,7 @@ async function Results({
       <p className="mt-4 text-sm text-ivory-dim">
         {f.tier === null
           ? t.summaryAll(num(stats.builds.length), date(stats.since))
-          : t.summaryRank(num(matching.length), rank?.name ?? "", num(pool.length), date(stats.since))}
+          : t.summaryRank(num(matching.length), rank?.name ?? "", date(stats.since))}
         {" · "}
         {heroName(f, heroById, t)}.
         {f.sort === "winrate" && t.sortedNote(MIN_MATCHES)}
@@ -271,8 +261,8 @@ async function Results({
         initialId={selected?.buildId ?? null}
         heroes={heroById}
         items={itemMap}
-        tier={null}
-        rankName={null}
+        tier={f.tier}
+        rankName={rank?.name ?? null}
         moreHref={rest > 0 && f.n < MAX ? href(f, { n: f.n + PAGE, build: null }) : null}
         moreCount={Math.min(PAGE, rest)}
       />

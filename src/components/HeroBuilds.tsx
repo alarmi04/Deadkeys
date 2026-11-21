@@ -18,8 +18,6 @@ import { getFormat } from "@/i18n/server-format";
 
 const PAGE = 20;
 const MAX = 80;
-/** Con filtro de rango del autor se examinan las builds más jugadas hasta este tope (igual que en /builds). */
-const CANDIDATES = 250;
 const ROMAN_SUB = ["", "I", "II", "III", "IV", "V", "VI"];
 
 type Filters = { tier: number | null; build: number | null; n: number };
@@ -44,7 +42,7 @@ export async function HeroBuilds({
   const tier = rawTier !== null && rawTier >= 1 && rawTier <= 11 ? rawTier : null;
   const f: Filters = { tier, build: int(sp.build), n: Math.min(MAX, Math.max(PAGE, int(sp.n) ?? PAGE)) };
 
-  const [ranks, stats] = await Promise.all([safe(getRanks()), safe(getBuildStats(hero.id, null))]);
+  const [ranks, stats] = await Promise.all([safe(getRanks()), safe(getBuildStats(hero.id, tier))]);
   const rankOptions = (ranks ?? []).filter((r) => r.tier > 0).sort((a, b) => a.tier - b.tier);
   const rank = rankOptions.find((r) => r.tier === tier) ?? null;
 
@@ -117,9 +115,11 @@ async function Results({
     );
   }
 
-  // Sin rango solo se cargan las builds visibles; con él, las candidatas más jugadas y se filtra por el rango del autor.
-  const pool = f.tier === null ? stats.builds.slice(0, Math.min(MAX, f.n + 1)) : stats.builds.slice(0, CANDIDATES);
-  const detailById = await getBuilds(pool.map((b) => b.buildId));
+  // El filtro de rango (rango medio de la partida) ya lo aplica la API, así que solo se piden las builds
+  // que se muestran: en Workers gratis cada visita admite 50 subpeticiones y cada build es una.
+  const ids = stats.builds.slice(0, Math.min(MAX, f.n + 1)).map((b) => b.buildId);
+  if (f.build !== null && stats.builds.some((b) => b.buildId === f.build)) ids.push(f.build);
+  const detailById = await getBuilds(ids);
   const authorIds = [...detailById.values()].map((d) => d.authorId);
   const [names, ranks] = await Promise.all([safe(getPlayerNames(authorIds)), safe(getPlayerRanks(authorIds))]).then(
     ([n, r]) => [n ?? {}, r ?? {}] as const,
@@ -131,25 +131,7 @@ async function Results({
     if (img && info?.name) badges[Number(id)] = { image: img, label: `${info.name} ${ROMAN_SUB[r.subrank] ?? r.subrank}` };
   }
 
-  const matching =
-    f.tier === null
-      ? stats.builds
-      : pool.filter((b) => {
-          const d = detailById.get(b.buildId);
-          return d !== undefined && ranks[d.authorId]?.tier === f.tier;
-        });
-  if (matching.length === 0) {
-    return (
-      <p className="mt-6 max-w-[64ch] text-ivory-dim">
-        {t.noneForRank(num(pool.length), hero.name, rankName ?? "")}{" "}
-        <FilterLink href={href({ tier: null, build: null, n: PAGE })} className="text-brass underline">
-          {t.allRanks}
-        </FilterLink>
-        .
-      </p>
-    );
-  }
-
+  const matching = stats.builds;
   const shown = matching.slice(0, f.n);
   const selected = matching.find((b) => b.buildId === f.build) ?? shown[0];
   const list = shown.some((b) => b.buildId === selected.buildId) ? shown : [selected, ...shown];
@@ -173,9 +155,7 @@ async function Results({
   return (
     <>
       <p className="mt-4 text-sm text-ivory-dim">
-        {f.tier === null
-          ? t.heroBuildsSummary(num(stats.builds.length), date(stats.since), scope)
-          : t.summaryRank(num(matching.length), rankName ?? "", num(pool.length), date(stats.since))}
+        {t.heroBuildsSummary(num(stats.builds.length), date(stats.since), scope)}
       </p>
       <BuildBrowser
         key={`${hero.id}-${f.tier}`}
@@ -191,8 +171,8 @@ async function Results({
         initialId={selected.buildId}
         heroes={{ [hero.id]: hero }}
         items={itemMap}
-        tier={null}
-        rankName={null}
+        tier={f.tier}
+        rankName={rankName}
         moreHref={rest > 0 && f.n < MAX ? href({ n: f.n + PAGE, build: null }) : null}
         moreCount={Math.min(PAGE, rest)}
       />

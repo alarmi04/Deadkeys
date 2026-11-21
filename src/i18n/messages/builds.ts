@@ -19,14 +19,13 @@ export const builds = pair(
     sortPlayed: "Más jugadas",
     sortWinrate: "Mayor winrate",
     noneThisWeek: "No hay partidas analizadas con builds publicadas esta semana para este héroe.",
-    noneForRank: (n: string, hero: string, rank: string) =>
-      `Ninguna de las ${n} builds más jugadas esta semana (${hero}) es de un autor de rango ${rank}. Prueba con otro rango o con`,
+    noneForRank: (hero: string, rank: string) =>
+      `No hay partidas analizadas de rango ${rank} con builds publicadas esta semana (${hero}). Prueba con otro rango o con`,
     allRanks: "todos los rangos",
     unknownHero: (id: number) => `héroe ${id}`,
     allHeroesLower: "todos los héroes",
     summaryAll: (n: string, since: string) => `${n} builds jugadas desde el ${since}`,
-    summaryRank: (n: string, rank: string, pool: string, since: string) =>
-      `${n} builds de autores de rango ${rank}, entre las ${pool} más jugadas desde el ${since}`,
+    summaryRank: (n: string, rank: string, since: string) => `${n} builds jugadas en partidas de rango ${rank} desde el ${since}`,
     sortedNote: (min: number) => ` Ordenadas por porcentaje de victorias; las de menos de ${min} partidas van al final.`,
     heroBuildsNone: (hero: string, scope: string) => `No hay partidas analizadas con builds de ${hero} esta semana (${scope}).`,
     tryWith: "Prueba con",
@@ -90,14 +89,13 @@ export const builds = pair(
     sortPlayed: "Most played",
     sortWinrate: "Highest win rate",
     noneThisWeek: "There are no analyzed matches with published builds this week for this hero.",
-    noneForRank: (n: string, hero: string, rank: string) =>
-      `None of the ${n} most played builds this week (${hero}) is from a ${rank} author. Try another rank or`,
+    noneForRank: (hero: string, rank: string) =>
+      `There are no analyzed ${rank} matches with published builds this week (${hero}). Try another rank or`,
     allRanks: "all ranks",
     unknownHero: (id: number) => `hero ${id}`,
     allHeroesLower: "all heroes",
     summaryAll: (n: string, since: string) => `${n} builds played since ${since}`,
-    summaryRank: (n: string, rank: string, pool: string, since: string) =>
-      `${n} builds by ${rank} authors, among the ${pool} most played since ${since}`,
+    summaryRank: (n: string, rank: string, since: string) => `${n} builds played in ${rank} matches since ${since}`,
     sortedNote: (min: number) => ` Sorted by win rate; builds with fewer than ${min} matches go last.`,
     heroBuildsNone: (hero: string, scope: string) => `There are no analyzed matches with ${hero} builds this week (${scope}).`,
     tryWith: "Try",
